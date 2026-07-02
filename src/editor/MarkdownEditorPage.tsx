@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  FilePlus2,
-  FolderOpen,
-  Moon,
-  Save,
-  Sun,
-} from 'lucide-react';
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+} from 'react';
 import { useTheme } from '../app/themeContext';
 import {
-  openMarkdownFromDevice,
+  getInitialMarkdownFilesToOpen,
+  listenForMarkdownFilesToOpen,
+  openMarkdownFilesFromDevice,
+  openMarkdownFromDroppedFiles,
   saveMarkdownToDevice,
   saveMarkdownToNewPath,
 } from '../storage/fileSystem';
@@ -24,8 +27,6 @@ import {
   saveWorkspaceDraft,
 } from '../storage/draftStorage';
 import { getDocumentStats } from '../shared/utils/documentStats';
-import { IconButton } from '../shared/components/IconButton';
-import { MarkittyIcon } from '../shared/components/MarkittyIcon';
 import { usePlatformCapabilities } from '../shared/hooks/usePlatformCapabilities';
 import { useEditorShortcuts } from './editorShortcuts';
 import { MarkdownEditor, type MarkdownEditorHandle } from './MarkdownEditor';
@@ -109,20 +110,39 @@ export function MarkdownEditorPage() {
     saveWorkspaceDraft({ documents, activeDocumentId: document.id });
   }, [activeDocumentId, document.id, documents]);
 
-  const updateActiveDocument = (updater: (document: MarkittyDocument) => MarkittyDocument) => {
-    setDocuments((currentDocuments) =>
-      currentDocuments.map((currentDocument) =>
-        currentDocument.id === document.id ? updater(currentDocument) : currentDocument,
-      ),
-    );
-  };
+  const updateActiveDocument = useCallback(
+    (updater: (document: MarkittyDocument) => MarkittyDocument) => {
+      setDocuments((currentDocuments) =>
+        currentDocuments.map((currentDocument) =>
+          currentDocument.id === document.id ? updater(currentDocument) : currentDocument,
+        ),
+      );
+    },
+    [document.id],
+  );
 
-  const addDocumentTab = (nextDocument: MarkittyDocument, nextMode: EditorMode = 'edit') => {
+  const addDocumentTab = useCallback((nextDocument: MarkittyDocument, nextMode: EditorMode = 'edit') => {
     setDocuments((currentDocuments) => [...currentDocuments, nextDocument]);
     setActiveDocumentId(nextDocument.id);
     setRequestedMode(nextMode);
     window.setTimeout(() => editorRef.current?.focus(), 0);
-  };
+  }, []);
+
+  const addDocumentTabs = useCallback(
+    (nextDocuments: MarkittyDocument[], nextMode: EditorMode = 'split') => {
+      if (nextDocuments.length === 0) {
+        return;
+      }
+
+      setDocuments((currentDocuments) => [...currentDocuments, ...nextDocuments]);
+      setActiveDocumentId(nextDocuments[nextDocuments.length - 1].id);
+      setRequestedMode(nextMode);
+      setSaveStatus(`Opened ${nextDocuments[nextDocuments.length - 1].title}`);
+      setErrorMessage(null);
+      window.setTimeout(() => editorRef.current?.focus(), 0);
+    },
+    [],
+  );
 
   const runEditorAction = (action: EditorActionId) => {
     setRequestedMode((currentMode) => (currentMode === 'preview' ? 'edit' : currentMode));
@@ -143,13 +163,52 @@ export function MarkdownEditorPage() {
 
   const handleOpen = async () => {
     setErrorMessage(null);
-    const opened = await openMarkdownFromDevice();
-    if (!opened) {
+    const opened = await openMarkdownFilesFromDevice();
+    if (opened.length === 0) {
       return;
     }
 
-    addDocumentTab(documentFromFile(opened), 'split');
-    setSaveStatus(`Opened ${opened.title}`);
+    addDocumentTabs(opened.map(documentFromFile), 'split');
+  };
+
+  useEffect(() => {
+    let isDisposed = false;
+    let unlisten: () => void = () => undefined;
+
+    const setupOpenListeners = async () => {
+      const initialFiles = await getInitialMarkdownFilesToOpen();
+      if (!isDisposed && initialFiles.length > 0) {
+        addDocumentTabs(initialFiles.map(documentFromFile), 'split');
+      }
+
+      unlisten = await listenForMarkdownFilesToOpen((files) => {
+        addDocumentTabs(files.map(documentFromFile), 'split');
+      });
+    };
+
+    void setupOpenListeners();
+
+    return () => {
+      isDisposed = true;
+      unlisten();
+    };
+  }, [addDocumentTabs]);
+
+  const handleDragOver = (event: DragEvent<HTMLElement>) => {
+    if (event.dataTransfer.types.includes('Files')) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+    }
+  };
+
+  const handleDrop = async (event: DragEvent<HTMLElement>) => {
+    if (!event.dataTransfer.files.length) {
+      return;
+    }
+
+    event.preventDefault();
+    const openedFiles = await openMarkdownFromDroppedFiles(event.dataTransfer.files);
+    addDocumentTabs(openedFiles.map(documentFromFile), 'split');
   };
 
   const markSaved = (saved: { path?: string; title?: string }) => {
@@ -229,63 +288,30 @@ export function MarkdownEditorPage() {
   const showPreview = mode === 'preview' || mode === 'split';
 
   return (
-    <main className="markitty-shell">
+    <main className="markitty-shell" onDragOver={handleDragOver} onDrop={handleDrop}>
+      <header className="command-bar">
+        <MarkdownToolbar
+          mode={mode}
+          requestedMode={requestedMode}
+          canUseSplit={capabilities.canUseSplitView}
+          canOpenFiles={capabilities.canOpenFiles}
+          theme={theme}
+          onModeChange={setRequestedMode}
+          onAction={runEditorAction}
+          onNew={handleNew}
+          onOpen={handleOpen}
+          onSave={handleSave}
+          onSaveAs={handleSaveAs}
+          onToggleTheme={toggleTheme}
+        />
+      </header>
+
       <DocumentTabs
         documents={documents}
         activeDocumentId={document.id}
         onActivate={handleActivateTab}
         onClose={handleCloseTab}
-        onNew={handleNew}
       />
-
-      <header className="command-bar">
-        <div className="brand-lockup" aria-label="Markitty">
-          <span className="brand-mark">
-            <MarkittyIcon size={22} />
-          </span>
-          <div>
-            <h1>Markitty</h1>
-            <p>Markdown editor with claws.</p>
-          </div>
-        </div>
-
-        <MarkdownToolbar
-          mode={mode}
-          requestedMode={requestedMode}
-          canUseSplit={capabilities.canUseSplitView}
-          onModeChange={setRequestedMode}
-          onAction={runEditorAction}
-        />
-
-        <div className="app-actions" aria-label="Document actions">
-          <IconButton label="New document" onClick={handleNew}>
-            <FilePlus2 size={18} aria-hidden="true" />
-          </IconButton>
-          <IconButton
-            label="Open Markdown file"
-            onClick={handleOpen}
-            disabled={!capabilities.canOpenFiles}
-          >
-            <FolderOpen size={18} aria-hidden="true" />
-          </IconButton>
-          <IconButton label="Save document" onClick={handleSave}>
-            <Save size={18} aria-hidden="true" />
-          </IconButton>
-          <button type="button" className="save-as-button" onClick={handleSaveAs}>
-            Save as
-          </button>
-          <IconButton
-            label={theme === 'dark' ? 'Use light theme' : 'Use dark theme'}
-            onClick={toggleTheme}
-          >
-            {theme === 'dark' ? (
-              <Sun size={18} aria-hidden="true" />
-            ) : (
-              <Moon size={18} aria-hidden="true" />
-            )}
-          </IconButton>
-        </div>
-      </header>
 
       <section className="workspace" data-mode={mode}>
         {showEditor ? (

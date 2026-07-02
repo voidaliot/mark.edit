@@ -1,13 +1,11 @@
-import { Plus, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import type { MarkittyDocument } from '../storage/documentModel';
-import { IconButton } from '../shared/components/IconButton';
 
 type DocumentTabsProps = {
   documents: MarkittyDocument[];
   activeDocumentId: string;
   onActivate: (documentId: string) => void;
   onClose: (documentId: string) => void;
-  onNew: () => void;
 };
 
 export function DocumentTabs({
@@ -15,7 +13,6 @@ export function DocumentTabs({
   activeDocumentId,
   onActivate,
   onClose,
-  onNew,
 }: DocumentTabsProps) {
   return (
     <section className="tabs-bar" aria-label="Open documents">
@@ -46,9 +43,6 @@ export function DocumentTabs({
           </div>
         ))}
       </div>
-      <IconButton label="New tab" className="new-tab-button" onClick={onNew}>
-        <Plus size={17} aria-hidden="true" />
-      </IconButton>
     </section>
   );
 }

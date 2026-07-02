@@ -60,18 +60,19 @@
 
 .tabs-bar {
   display: flex;
-  min-height: 44px;
-  align-items: stretch;
-  gap: 6px;
-  padding: 6px 10px 0;
+  min-height: 40px;
+  align-items: center;
+  padding: 4px 8px;
   border-bottom: 1px solid var(--border);
   background: var(--surface-muted);
+  user-select: none;
 }
 
 .tabs-scroll {
   display: flex;
   min-width: 0;
-  flex: 1;
+  flex: 1 1 auto;
+  align-items: center;
   gap: 4px;
   overflow-x: auto;
 }
@@ -80,13 +81,13 @@
   display: flex;
   width: clamp(150px, 18vw, 260px);
   min-width: 120px;
-  height: 38px;
+  height: 32px;
   align-items: center;
   border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: 8px 8px 0 0;
+  border-radius: 8px;
   background: transparent;
   color: var(--text-muted);
+  overflow: hidden;
 }
 
 .document-tab[aria-selected="true"] {
@@ -144,18 +145,12 @@
   background: var(--button-hover);
 }
 
-.new-tab-button {
-  align-self: center;
-}
-
 .command-bar {
   display: flex;
-  min-height: 62px;
+  min-height: 44px;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  overflow-x: auto;
-  padding: 10px 14px;
+  overflow: hidden;
+  padding: 4px 10px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
@@ -206,11 +201,11 @@
   justify-content: flex-end;
 }
 
-.icon-button,
-.save-as-button {
+.icon-button {
   display: inline-grid;
-  height: 36px;
-  min-width: 36px;
+  height: 34px;
+  min-width: 34px;
+  flex: 0 0 auto;
   place-items: center;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -219,14 +214,7 @@
   cursor: pointer;
 }
 
-.save-as-button {
-  padding: 0 12px;
-  font-size: 0.86rem;
-  font-weight: 650;
-}
-
-.icon-button:hover,
-.save-as-button:hover {
+.icon-button:hover {
   background: var(--button-hover);
 }
 
@@ -236,24 +224,36 @@
   color: var(--accent-strong);
 }
 
-.icon-button:disabled,
-.save-as-button:disabled {
+.icon-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
 
 .formatting-toolbar {
   display: flex;
-  min-width: 320px;
-  min-height: 36px;
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
   flex: 1 1 auto;
   align-items: center;
-  justify-content: center;
-  gap: 12px;
+  justify-content: flex-start;
+  gap: 6px;
   overflow-x: auto;
   padding: 0;
   border: 0;
   background: transparent;
+}
+
+.toolbar-spacer {
+  min-width: 8px;
+  flex: 1 1 auto;
+}
+
+.tool-separator {
+  width: 1px;
+  height: 24px;
+  flex: 0 0 auto;
+  background: var(--border-subtle);
 }
 
 .document-strip {
@@ -448,8 +448,8 @@
 
 @media (max-width: 899px) {
   .tabs-bar {
-    min-height: 42px;
-    padding-inline: 8px;
+    min-height: 38px;
+    padding: 4px 6px;
   }
 
   .document-tab {
@@ -457,9 +457,8 @@
   }
 
   .command-bar {
-    min-height: 58px;
-    align-items: center;
-    padding: 8px 10px;
+    min-height: 44px;
+    padding: 4px 8px;
   }
 
   .brand-mark {
@@ -475,18 +474,12 @@
     gap: 4px;
   }
 
-  .save-as-button {
-    min-width: 36px;
-    padding: 0 8px;
-  }
-
   .workspace {
     order: 3;
   }
 
   .formatting-toolbar {
-    min-width: 360px;
-    justify-content: flex-start;
+    gap: 4px;
   }
 
   .preview-pane {

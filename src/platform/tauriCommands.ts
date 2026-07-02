@@ -15,6 +15,10 @@ function titleFromPath(path: string) {
   return path.split(/[\\/]/).pop() || 'Untitled.md';
 }
 
+function isMarkdownTitle(title: string) {
+  return /\.(md|markdown)$/i.test(title);
+}
+
 function ensureMarkdownExtension(title: string) {
   return /\.(md|markdown)$/i.test(title) ? title : `${title}.md`;
 }
@@ -29,24 +33,33 @@ function downloadMarkdown(content: string, title: string) {
   URL.revokeObjectURL(url);
 }
 
-function openWithBrowserPicker(): Promise<OpenedMarkdownFile | null> {
+function fileToOpenedMarkdown(file: File): Promise<OpenedMarkdownFile | null> {
+  if (!isMarkdownTitle(file.name)) {
+    return Promise.resolve(null);
+  }
+
+  return file.text().then((content) => ({
+    title: file.name,
+    content,
+  }));
+}
+
+function openWithBrowserPicker(): Promise<OpenedMarkdownFile[]> {
   return new Promise((resolve, reject) => {
     const input = document.createElement('input');
     input.type = 'file';
+    input.multiple = true;
     input.accept = '.md,.markdown,text/markdown,text/plain';
 
     input.addEventListener('change', async () => {
-      const file = input.files?.[0];
-      if (!file) {
-        resolve(null);
+      const files = input.files;
+      if (!files?.length) {
+        resolve([]);
         return;
       }
 
       try {
-        resolve({
-          title: file.name,
-          content: await file.text(),
-        });
+        resolve(await openMarkdownFilesFromBrowserFiles(files));
       } catch (error) {
         reject(error);
       }
@@ -57,6 +70,11 @@ function openWithBrowserPicker(): Promise<OpenedMarkdownFile | null> {
 }
 
 export async function openMarkdownFile(): Promise<OpenedMarkdownFile | null> {
+  const files = await openMarkdownFiles();
+  return files[0] ?? null;
+}
+
+export async function openMarkdownFiles(): Promise<OpenedMarkdownFile[]> {
   if (!isTauriRuntime()) {
     return openWithBrowserPicker();
   }
@@ -66,19 +84,22 @@ export async function openMarkdownFile(): Promise<OpenedMarkdownFile | null> {
     import('@tauri-apps/plugin-fs'),
   ]);
   const selected = await open({
-    multiple: false,
+    multiple: true,
     filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }],
   });
 
-  if (!selected || Array.isArray(selected)) {
-    return null;
+  if (!selected) {
+    return [];
   }
 
-  return {
-    path: selected,
-    title: titleFromPath(selected),
-    content: await readTextFile(selected),
-  };
+  const paths = Array.isArray(selected) ? selected : [selected];
+  return Promise.all(
+    paths.filter(isMarkdownTitle).map(async (path) => ({
+      path,
+      title: titleFromPath(path),
+      content: await readTextFile(path),
+    })),
+  );
 }
 
 export async function saveMarkdownFile(
@@ -124,4 +145,70 @@ export async function saveMarkdownFileAs(
 
   await writeTextFile(path, content);
   return { path, title: titleFromPath(path) };
+}
+
+export async function openMarkdownFilesFromBrowserFiles(
+  files: FileList | File[],
+): Promise<OpenedMarkdownFile[]> {
+  const openedFiles = await Promise.all(Array.from(files).map(fileToOpenedMarkdown));
+  return openedFiles.filter((file): file is OpenedMarkdownFile => Boolean(file));
+}
+
+export async function openMarkdownFilesAtPaths(paths: string[]): Promise<OpenedMarkdownFile[]> {
+  if (!isTauriRuntime()) {
+    return [];
+  }
+
+  const { readTextFile } = await import('@tauri-apps/plugin-fs');
+  return Promise.all(
+    paths.filter(isMarkdownTitle).map(async (path) => ({
+      path,
+      title: titleFromPath(path),
+      content: await readTextFile(path),
+    })),
+  );
+}
+
+export async function getInitialMarkdownOpenFiles(): Promise<OpenedMarkdownFile[]> {
+  if (!isTauriRuntime()) {
+    return [];
+  }
+
+  const { invoke } = await import('@tauri-apps/api/core');
+  const paths = await invoke<string[]>('initial_open_paths');
+  return openMarkdownFilesAtPaths(paths);
+}
+
+export async function listenForMarkdownOpenRequests(
+  onOpen: (files: OpenedMarkdownFile[]) => void,
+): Promise<() => void> {
+  if (!isTauriRuntime()) {
+    return () => undefined;
+  }
+
+  const [{ listen }, { getCurrentWindow }] = await Promise.all([
+    import('@tauri-apps/api/event'),
+    import('@tauri-apps/api/window'),
+  ]);
+  const unlistenOpen = await listen<string[]>('markitty://open-files', async (event) => {
+    const files = await openMarkdownFilesAtPaths(event.payload);
+    if (files.length > 0) {
+      onOpen(files);
+    }
+  });
+  const unlistenDrop = await getCurrentWindow().onDragDropEvent(async (event) => {
+    if (event.payload.type !== 'drop') {
+      return;
+    }
+
+    const files = await openMarkdownFilesAtPaths(event.payload.paths);
+    if (files.length > 0) {
+      onOpen(files);
+    }
+  });
+
+  return () => {
+    unlistenOpen();
+    unlistenDrop();
+  };
 }

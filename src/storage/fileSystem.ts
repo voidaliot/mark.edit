@@ -1,5 +1,10 @@
 import {
+  getInitialMarkdownOpenFiles,
+  listenForMarkdownOpenRequests,
   openMarkdownFile,
+  openMarkdownFiles,
+  openMarkdownFilesAtPaths,
+  openMarkdownFilesFromBrowserFiles,
   saveMarkdownFile,
   saveMarkdownFileAs,
   type OpenedMarkdownFile,
@@ -9,6 +14,30 @@ import type { MarkittyDocument } from './documentModel';
 
 export async function openMarkdownFromDevice(): Promise<OpenedMarkdownFile | null> {
   return openMarkdownFile();
+}
+
+export async function openMarkdownFilesFromDevice(): Promise<OpenedMarkdownFile[]> {
+  return openMarkdownFiles();
+}
+
+export async function openMarkdownFromDroppedFiles(
+  files: FileList | File[],
+): Promise<OpenedMarkdownFile[]> {
+  return openMarkdownFilesFromBrowserFiles(files);
+}
+
+export async function openMarkdownFromPaths(paths: string[]): Promise<OpenedMarkdownFile[]> {
+  return openMarkdownFilesAtPaths(paths);
+}
+
+export async function getInitialMarkdownFilesToOpen(): Promise<OpenedMarkdownFile[]> {
+  return getInitialMarkdownOpenFiles();
+}
+
+export async function listenForMarkdownFilesToOpen(
+  onOpen: (files: OpenedMarkdownFile[]) => void,
+): Promise<() => void> {
+  return listenForMarkdownOpenRequests(onOpen);
 }
 
 export async function saveMarkdownToDevice(
