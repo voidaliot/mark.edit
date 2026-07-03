@@ -3,10 +3,11 @@ import { renderMarkdown } from './markdownRenderer';
 
 type MarkdownPreviewProps = {
   content: string;
+  documentPath?: string;
 };
 
-export function MarkdownPreview({ content }: MarkdownPreviewProps) {
-  const html = useMemo(() => renderMarkdown(content), [content]);
+export function MarkdownPreview({ content, documentPath }: MarkdownPreviewProps) {
+  const html = useMemo(() => renderMarkdown(content, { documentPath }), [content, documentPath]);
 
   if (!content.trim()) {
     return (

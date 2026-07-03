@@ -4,14 +4,20 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type DragEvent,
+  type KeyboardEvent,
+  type PointerEvent,
 } from 'react';
 import { useTheme } from '../app/themeContext';
 import {
+  embeddedFilesFromDroppedFiles,
   getInitialMarkdownFilesToOpen,
+  listenForEmbeddedFilesToDrop,
   listenForMarkdownFilesToOpen,
   openMarkdownFilesFromDevice,
   openMarkdownFromDroppedFiles,
+  pickFilesForEmbedding,
   saveMarkdownToDevice,
   saveMarkdownToNewPath,
 } from '../storage/fileSystem';
@@ -39,6 +45,15 @@ import {
   type EditorMode,
   type SaveStatus,
 } from './editorTypes';
+import { createEmbeddedMarkdown, isImagePath } from './embeddedMarkdown';
+import {
+  clampSplitEditorPercent,
+  defaultSplitEditorPercent,
+  loadSplitEditorPercent,
+  maxSplitEditorPercent,
+  minSplitEditorPercent,
+  saveSplitEditorPercent,
+} from './splitView';
 
 type WorkspaceState = {
   documents: MarkittyDocument[];
@@ -80,6 +95,7 @@ function useWideLayout() {
 
 export function MarkdownEditorPage() {
   const editorRef = useRef<MarkdownEditorHandle>(null);
+  const workspaceRef = useRef<HTMLElement>(null);
   const initialWorkspaceRef = useRef<WorkspaceState | null>(null);
   if (!initialWorkspaceRef.current) {
     initialWorkspaceRef.current = loadInitialWorkspace();
@@ -92,6 +108,8 @@ export function MarkdownEditorPage() {
     () => initialWorkspaceRef.current?.activeDocumentId ?? documents[0].id,
   );
   const [requestedMode, setRequestedMode] = useState<EditorMode>('split');
+  const [splitEditorPercent, setSplitEditorPercent] = useState(loadSplitEditorPercent);
+  const [resizingPointerId, setResizingPointerId] = useState<number | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('Recovered draft');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const isWideLayout = useWideLayout();
@@ -109,6 +127,10 @@ export function MarkdownEditorPage() {
   useEffect(() => {
     saveWorkspaceDraft({ documents, activeDocumentId: document.id });
   }, [activeDocumentId, document.id, documents]);
+
+  useEffect(() => {
+    saveSplitEditorPercent(splitEditorPercent);
+  }, [splitEditorPercent]);
 
   const updateActiveDocument = useCallback(
     (updater: (document: MarkittyDocument) => MarkittyDocument) => {
@@ -147,6 +169,46 @@ export function MarkdownEditorPage() {
   const runEditorAction = (action: EditorActionId) => {
     setRequestedMode((currentMode) => (currentMode === 'preview' ? 'edit' : currentMode));
     window.setTimeout(() => editorRef.current?.applyAction(action), 0);
+  };
+
+  const insertEmbeddedFiles = useCallback(
+    (
+      files: Array<{ title: string; path: string }>,
+      preferredKind: 'auto' | 'file' | 'image' = 'auto',
+    ) => {
+      if (files.length === 0) {
+        return;
+      }
+
+      const kind =
+        preferredKind === 'auto'
+          ? files.every((file) => isImagePath(file.path))
+            ? 'image'
+            : 'file'
+          : preferredKind;
+      const markdown = createEmbeddedMarkdown(files, kind, document.path);
+      setRequestedMode((currentMode) => (currentMode === 'preview' ? 'edit' : currentMode));
+      window.setTimeout(() => editorRef.current?.insertMarkdown(markdown), 0);
+    },
+    [document.path],
+  );
+
+  const handleEmbedImage = async () => {
+    setErrorMessage(null);
+    try {
+      insertEmbeddedFiles(await pickFilesForEmbedding('image'), 'image');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to insert this picture.');
+    }
+  };
+
+  const handleEmbedFile = async () => {
+    setErrorMessage(null);
+    try {
+      insertEmbeddedFiles(await pickFilesForEmbedding('file'), 'file');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to attach this file.');
+    }
   };
 
   const handleContentChange = (content: string) => {
@@ -194,6 +256,26 @@ export function MarkdownEditorPage() {
     };
   }, [addDocumentTabs]);
 
+  useEffect(() => {
+    let isDisposed = false;
+    let unlisten: () => void = () => undefined;
+
+    const setupDropListener = async () => {
+      unlisten = await listenForEmbeddedFilesToDrop((files) => {
+        if (!isDisposed) {
+          insertEmbeddedFiles(files, 'auto');
+        }
+      });
+    };
+
+    void setupDropListener();
+
+    return () => {
+      isDisposed = true;
+      unlisten();
+    };
+  }, [insertEmbeddedFiles]);
+
   const handleDragOver = (event: DragEvent<HTMLElement>) => {
     if (event.dataTransfer.types.includes('Files')) {
       event.preventDefault();
@@ -208,7 +290,9 @@ export function MarkdownEditorPage() {
 
     event.preventDefault();
     const openedFiles = await openMarkdownFromDroppedFiles(event.dataTransfer.files);
+    const embeddedFiles = embeddedFilesFromDroppedFiles(event.dataTransfer.files);
     addDocumentTabs(openedFiles.map(documentFromFile), 'split');
+    insertEmbeddedFiles(embeddedFiles, 'auto');
   };
 
   const markSaved = (saved: { path?: string; title?: string }) => {
@@ -277,6 +361,85 @@ export function MarkdownEditorPage() {
     }
   };
 
+  const resizeSplitAtClientX = useCallback((clientX: number) => {
+    const workspace = workspaceRef.current;
+    if (!workspace) {
+      return;
+    }
+
+    const { left, width } = workspace.getBoundingClientRect();
+    if (width <= 0) {
+      return;
+    }
+
+    setSplitEditorPercent(clampSplitEditorPercent(((clientX - left) / width) * 100));
+  }, []);
+
+  const adjustSplitBy = useCallback((delta: number) => {
+    setSplitEditorPercent((currentPercent) => clampSplitEditorPercent(currentPercent + delta));
+  }, []);
+
+  const handleSplitPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setResizingPointerId(event.pointerId);
+    resizeSplitAtClientX(event.clientX);
+  };
+
+  const handleSplitPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerId !== resizingPointerId) {
+      return;
+    }
+
+    resizeSplitAtClientX(event.clientX);
+  };
+
+  const finishSplitPointerResize = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerId !== resizingPointerId) {
+      return;
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setResizingPointerId(null);
+  };
+
+  const handleSplitKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const step = event.shiftKey ? 10 : 5;
+
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      adjustSplitBy(-step);
+      return;
+    }
+
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      adjustSplitBy(step);
+      return;
+    }
+
+    if (event.key === 'Home') {
+      event.preventDefault();
+      setSplitEditorPercent(minSplitEditorPercent);
+      return;
+    }
+
+    if (event.key === 'End') {
+      event.preventDefault();
+      setSplitEditorPercent(maxSplitEditorPercent);
+    }
+  };
+
+  const resetSplitSize = () => {
+    setSplitEditorPercent(defaultSplitEditorPercent);
+  };
+
   useEditorShortcuts({
     onAction: runEditorAction,
     onNew: handleNew,
@@ -286,6 +449,11 @@ export function MarkdownEditorPage() {
 
   const showEditor = mode === 'edit' || mode === 'split';
   const showPreview = mode === 'preview' || mode === 'split';
+  const splitWorkspaceStyle =
+    mode === 'split'
+      ? ({ '--split-editor-percent': `${splitEditorPercent}%` } as CSSProperties)
+      : undefined;
+  const roundedSplitEditorPercent = Math.round(splitEditorPercent);
 
   return (
     <main className="markitty-shell" onDragOver={handleDragOver} onDrop={handleDrop}>
@@ -295,9 +463,12 @@ export function MarkdownEditorPage() {
           requestedMode={requestedMode}
           canUseSplit={capabilities.canUseSplitView}
           canOpenFiles={capabilities.canOpenFiles}
+          canEmbedFiles={capabilities.canOpenFiles}
           theme={theme}
           onModeChange={setRequestedMode}
           onAction={runEditorAction}
+          onEmbedFile={handleEmbedFile}
+          onEmbedImage={handleEmbedImage}
           onNew={handleNew}
           onOpen={handleOpen}
           onSave={handleSave}
@@ -313,7 +484,12 @@ export function MarkdownEditorPage() {
         onClose={handleCloseTab}
       />
 
-      <section className="workspace" data-mode={mode}>
+      <section
+        className={`workspace ${resizingPointerId === null ? '' : 'is-resizing'}`.trim()}
+        data-mode={mode}
+        ref={workspaceRef}
+        style={splitWorkspaceStyle}
+      >
         {showEditor ? (
           <MarkdownEditor
             ref={editorRef}
@@ -322,7 +498,31 @@ export function MarkdownEditorPage() {
             theme={theme}
           />
         ) : null}
-        {showPreview ? <MarkdownPreview content={document.content} /> : null}
+        {mode === 'split' ? (
+          <div
+            className="split-resize-handle"
+            role="separator"
+            aria-label="Resize editor and preview"
+            aria-orientation="vertical"
+            aria-valuemin={minSplitEditorPercent}
+            aria-valuemax={maxSplitEditorPercent}
+            aria-valuenow={roundedSplitEditorPercent}
+            aria-valuetext={`${roundedSplitEditorPercent}% editor, ${
+              100 - roundedSplitEditorPercent
+            }% preview`}
+            tabIndex={0}
+            title="Resize editor and preview"
+            onDoubleClick={resetSplitSize}
+            onKeyDown={handleSplitKeyDown}
+            onPointerCancel={finishSplitPointerResize}
+            onPointerDown={handleSplitPointerDown}
+            onPointerMove={handleSplitPointerMove}
+            onPointerUp={finishSplitPointerResize}
+          />
+        ) : null}
+        {showPreview ? (
+          <MarkdownPreview content={document.content} documentPath={document.path} />
+        ) : null}
       </section>
 
       <footer className="status-bar">

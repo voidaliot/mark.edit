@@ -11,9 +11,19 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dist-android-build
 *.local
 src-tauri/target
 src-tauri/gen/schemas
+src-tauri/gen/android/.gradle
+src-tauri/gen/android/build
+src-tauri/gen/android/buildSrc/.gradle
+src-tauri/gen/android/buildSrc/.kotlin
+src-tauri/gen/android/buildSrc/build
+src-tauri/gen/android/app/build
+src-tauri/gen/android/app/src/main/assets
+src-tauri/gen/android/app/src/main/**/generated
+src-tauri/gen/android/app/src/main/jniLibs
 .tauri
 
 # Editor directories and files

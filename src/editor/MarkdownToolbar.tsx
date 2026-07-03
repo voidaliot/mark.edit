@@ -5,6 +5,7 @@ import {
   Code2,
   Columns2,
   Eye,
+  FileImage,
   FilePlus,
   FolderOpen,
   Heading1,
@@ -13,6 +14,7 @@ import {
   List,
   ListOrdered,
   Moon,
+  Paperclip,
   Pencil,
   Quote,
   Save,
@@ -28,9 +30,12 @@ type MarkdownToolbarProps = {
   requestedMode: EditorMode;
   canUseSplit: boolean;
   canOpenFiles: boolean;
+  canEmbedFiles: boolean;
   theme: ThemeMode;
   onModeChange: (mode: EditorMode) => void;
   onAction: (action: EditorActionId) => void;
+  onEmbedFile: () => void;
+  onEmbedImage: () => void;
   onNew: () => void;
   onOpen: () => void;
   onSave: () => void;
@@ -63,9 +68,12 @@ export function MarkdownToolbar({
   requestedMode,
   canUseSplit,
   canOpenFiles,
+  canEmbedFiles,
   theme,
   onModeChange,
   onAction,
+  onEmbedFile,
+  onEmbedImage,
   onNew,
   onOpen,
   onSave,
@@ -102,6 +110,13 @@ export function MarkdownToolbar({
           {action.icon}
         </IconButton>
       ))}
+      <span className="tool-separator" aria-hidden="true" />
+      <IconButton label="Insert picture" onClick={onEmbedImage} disabled={!canEmbedFiles}>
+        <FileImage size={17} aria-hidden="true" />
+      </IconButton>
+      <IconButton label="Attach file" onClick={onEmbedFile} disabled={!canEmbedFiles}>
+        <Paperclip size={17} aria-hidden="true" />
+      </IconButton>
       <span className="toolbar-spacer" aria-hidden="true" />
       <span className="tool-separator" aria-hidden="true" />
       <IconButton label="New tab" onClick={onNew}>

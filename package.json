@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
-    "build": "tsc -b && vite build",
+    "build": "npm run build:web",
+    "build:web": "tsc -b && vite build",
+    "build:desktop": "tauri build --no-bundle",
+    "build:android": "tauri android build --apk --target aarch64 --ci",
+    "build:all": "npm run build:desktop && npm run build:android",
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",

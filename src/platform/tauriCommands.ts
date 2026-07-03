@@ -11,12 +11,26 @@ export type SavedMarkdownFile = {
   title?: string;
 };
 
+export type EmbeddedFileKind = 'file' | 'image';
+
+export type PickedEmbeddedFile = {
+  title: string;
+  path: string;
+  type?: string;
+};
+
+const imageExtensions = ['avif', 'bmp', 'gif', 'jpg', 'jpeg', 'png', 'svg', 'webp'];
+
 function titleFromPath(path: string) {
   return path.split(/[\\/]/).pop() || 'Untitled.md';
 }
 
 function isMarkdownTitle(title: string) {
   return /\.(md|markdown)$/i.test(title);
+}
+
+function isImageTitle(title: string) {
+  return new RegExp(`\\.(${imageExtensions.join('|')})$`, 'i').test(title);
 }
 
 function ensureMarkdownExtension(title: string) {
@@ -67,6 +81,38 @@ function openWithBrowserPicker(): Promise<OpenedMarkdownFile[]> {
 
     input.click();
   });
+}
+
+function pickBrowserFilesForEmbedding(kind: EmbeddedFileKind): Promise<PickedEmbeddedFile[]> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    if (kind === 'image') {
+      input.accept = imageExtensions.map((extension) => `.${extension}`).join(',');
+    }
+
+    input.addEventListener('change', () => {
+      const files = input.files;
+      resolve(files ? embeddedFilesFromBrowserFiles(files, kind) : []);
+    });
+
+    input.click();
+  });
+}
+
+function embeddedFilesFromPaths(
+  paths: string[],
+  kind: EmbeddedFileKind,
+  skipMarkdown: boolean,
+): PickedEmbeddedFile[] {
+  return paths
+    .filter((path) => !skipMarkdown || !isMarkdownTitle(path))
+    .filter((path) => kind === 'file' || isImageTitle(path))
+    .map((path) => ({
+      title: titleFromPath(path),
+      path,
+    }));
 }
 
 export async function openMarkdownFile(): Promise<OpenedMarkdownFile | null> {
@@ -154,6 +200,42 @@ export async function openMarkdownFilesFromBrowserFiles(
   return openedFiles.filter((file): file is OpenedMarkdownFile => Boolean(file));
 }
 
+export function embeddedFilesFromBrowserFiles(
+  files: FileList | File[],
+  kind: EmbeddedFileKind = 'file',
+  skipMarkdown = false,
+): PickedEmbeddedFile[] {
+  return Array.from(files)
+    .filter((file) => !skipMarkdown || !isMarkdownTitle(file.name))
+    .filter((file) => kind === 'file' || file.type.startsWith('image/') || isImageTitle(file.name))
+    .map((file) => ({
+      title: file.name,
+      path: file.name,
+      type: file.type || undefined,
+    }));
+}
+
+export async function pickEmbeddedFiles(kind: EmbeddedFileKind): Promise<PickedEmbeddedFile[]> {
+  if (!isTauriRuntime()) {
+    return pickBrowserFilesForEmbedding(kind);
+  }
+
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const selected = await open({
+    multiple: true,
+    ...(kind === 'image'
+      ? { filters: [{ name: 'Images', extensions: imageExtensions }] }
+      : {}),
+  });
+
+  if (!selected) {
+    return [];
+  }
+
+  const paths = Array.isArray(selected) ? selected : [selected];
+  return embeddedFilesFromPaths(paths, kind, false);
+}
+
 export async function openMarkdownFilesAtPaths(paths: string[]): Promise<OpenedMarkdownFile[]> {
   if (!isTauriRuntime()) {
     return [];
@@ -211,4 +293,26 @@ export async function listenForMarkdownOpenRequests(
     unlistenOpen();
     unlistenDrop();
   };
+}
+
+export async function listenForEmbeddedFileDropRequests(
+  onDrop: (files: PickedEmbeddedFile[]) => void,
+): Promise<() => void> {
+  if (!isTauriRuntime()) {
+    return () => undefined;
+  }
+
+  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+  const unlistenDrop = await getCurrentWindow().onDragDropEvent((event) => {
+    if (event.payload.type !== 'drop') {
+      return;
+    }
+
+    const files = embeddedFilesFromPaths(event.payload.paths, 'file', true);
+    if (files.length > 0) {
+      onDrop(files);
+    }
+  });
+
+  return unlistenDrop;
 }

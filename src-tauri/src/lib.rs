@@ -30,10 +30,14 @@ fn emit_open_paths(app: &tauri::AppHandle, paths: Vec<String>) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  let app = tauri::Builder::default()
-    .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-      emit_open_paths(app, markdown_paths_from_args(args.into_iter().skip(1)));
-    }))
+  let builder = tauri::Builder::default();
+
+  #[cfg(not(mobile))]
+  let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+    emit_open_paths(app, markdown_paths_from_args(args.into_iter().skip(1)));
+  }));
+
+  let app = builder
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_fs::init())
     .invoke_handler(tauri::generate_handler![initial_open_paths])

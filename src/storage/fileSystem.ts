@@ -1,12 +1,17 @@
 import {
   getInitialMarkdownOpenFiles,
+  embeddedFilesFromBrowserFiles,
+  listenForEmbeddedFileDropRequests,
   listenForMarkdownOpenRequests,
   openMarkdownFile,
   openMarkdownFiles,
   openMarkdownFilesAtPaths,
   openMarkdownFilesFromBrowserFiles,
+  pickEmbeddedFiles,
   saveMarkdownFile,
   saveMarkdownFileAs,
+  type EmbeddedFileKind,
+  type PickedEmbeddedFile,
   type OpenedMarkdownFile,
   type SavedMarkdownFile,
 } from '../platform/tauriCommands';
@@ -24,6 +29,24 @@ export async function openMarkdownFromDroppedFiles(
   files: FileList | File[],
 ): Promise<OpenedMarkdownFile[]> {
   return openMarkdownFilesFromBrowserFiles(files);
+}
+
+export function embeddedFilesFromDroppedFiles(
+  files: FileList | File[],
+): PickedEmbeddedFile[] {
+  return embeddedFilesFromBrowserFiles(files, 'file', true);
+}
+
+export async function pickFilesForEmbedding(
+  kind: EmbeddedFileKind,
+): Promise<PickedEmbeddedFile[]> {
+  return pickEmbeddedFiles(kind);
+}
+
+export async function listenForEmbeddedFilesToDrop(
+  onDrop: (files: PickedEmbeddedFile[]) => void,
+): Promise<() => void> {
+  return listenForEmbeddedFileDropRequests(onDrop);
 }
 
 export async function openMarkdownFromPaths(paths: string[]): Promise<OpenedMarkdownFile[]> {

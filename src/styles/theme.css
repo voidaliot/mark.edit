@@ -290,7 +290,9 @@
 }
 
 .workspace[data-mode="split"] {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns:
+    minmax(0, var(--split-editor-percent, 50%)) 10px
+    minmax(0, 1fr);
 }
 
 .editor-pane,
@@ -311,9 +313,54 @@
   background: var(--preview-bg);
 }
 
+.workspace[data-mode="split"] .preview-pane {
+  border-left: 0;
+}
+
 .workspace[data-mode="preview"] .preview-pane,
 .workspace[data-mode="edit"] .editor-pane {
   border-left: 0;
+}
+
+.split-resize-handle {
+  position: relative;
+  display: grid;
+  min-width: 10px;
+  min-height: 0;
+  place-items: center;
+  border-inline: 1px solid var(--border);
+  background: var(--surface-strong);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.split-resize-handle::before {
+  width: 2px;
+  height: 44px;
+  border-radius: 999px;
+  background: var(--text-soft);
+  content: "";
+  opacity: 0.62;
+}
+
+.split-resize-handle:hover,
+.split-resize-handle:focus-visible,
+.workspace.is-resizing .split-resize-handle {
+  background: var(--button-hover);
+  outline: none;
+}
+
+.split-resize-handle:hover::before,
+.split-resize-handle:focus-visible::before,
+.workspace.is-resizing .split-resize-handle::before {
+  background: var(--accent);
+  opacity: 1;
+}
+
+.workspace.is-resizing,
+.workspace.is-resizing * {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .preview-empty {
@@ -410,6 +457,46 @@
   border-top: 1px solid var(--border);
 }
 
+.markdown-preview img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.4rem 0 1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.markdown-preview a.attachment-link {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--text-primary);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.markdown-preview a.attachment-link::before {
+  width: 0.75rem;
+  height: 0.95rem;
+  flex: 0 0 auto;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  content: "";
+  opacity: 0.72;
+}
+
+.markdown-preview a.attachment-link:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
 .status-bar {
   order: 4;
   display: flex;
@@ -489,6 +576,10 @@
 
   .workspace[data-mode="split"] {
     grid-template-columns: 1fr;
+  }
+
+  .split-resize-handle {
+    display: none;
   }
 
   .status-bar {

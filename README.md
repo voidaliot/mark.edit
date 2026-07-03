@@ -43,10 +43,22 @@ Build the frontend:
 npm run build
 ```
 
-Build the Tauri app:
+Build the Tauri desktop app executable without installer bundles:
 
 ```bash
-npm run tauri build
+npm run build:desktop
+```
+
+Build the Android release APK for current arm64 devices:
+
+```bash
+npm run build:android
+```
+
+Build the standard release outputs:
+
+```bash
+npm run build:all
 ```
 
 ## Test
@@ -65,6 +77,7 @@ npm test
 - Save drafts locally and recover them after restart.
 - Open and save `.md` or `.markdown` files where platform support allows it.
 - Use formatting toolbar actions for headings, bold, italic, inline code, code blocks, links, lists, and quotes.
+- Insert Markdown image embeds and file attachments from local files.
 - Use desktop keyboard shortcuts for bold, italic, save, new, and open.
 - Switch between light and dark themes.
 - See word count, character count, and save status.
@@ -77,8 +90,9 @@ Screenshots coming soon.
 ## Known Limitations
 
 - Browser fallback save downloads a new Markdown file instead of writing back to the original path.
+- Browser fallback embeds use filenames because browsers do not expose full local file paths.
 - Native mobile file handling is intentionally minimal in the MVP.
-- Tauri file permissions are scoped to Markdown files in common user directories.
+- Tauri edit permissions are scoped to Markdown files; preview assets can load from common user directories for local embeds.
 - Unsaved tab close confirmation is not implemented yet.
 - There is no cloud sync, login, collaboration, AI, plugin system, or workspace management.
 

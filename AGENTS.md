@@ -8,4 +8,6 @@ The app icon source is `app-icon.svg`; regenerate Tauri icons with `npx tauri ic
 
 Avoid heavy dependencies and large state-management libraries. Do not add sync, login, AI, cloud, collaboration, plugins, or account features unless explicitly requested.
 
+When asked to build all app versions, build release outputs only: the Windows desktop release executable plus one Android arm64/aarch64 release APK for current devices. Do not build Windows installer bundles (MSI/NSIS), debug artifacts, all Android ABIs, or AABs unless explicitly requested.
+
 Verify changes with focused tests. Update this file only for durable project knowledge that future coding agents should know.

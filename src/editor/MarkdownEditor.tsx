@@ -29,6 +29,7 @@ import type { EditorActionId } from './editorTypes';
 export type MarkdownEditorHandle = {
   applyAction: (action: EditorActionId) => void;
   focus: () => void;
+  insertMarkdown: (markdown: string) => void;
 };
 
 type MarkdownEditorProps = {
@@ -170,6 +171,23 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
           selection: {
             anchor: result.selection.start,
             head: result.selection.end,
+          },
+          scrollIntoView: true,
+        });
+        view.focus();
+      },
+      insertMarkdown(markdown: string) {
+        const view = viewRef.current;
+        if (!view) {
+          return;
+        }
+
+        const selection = view.state.selection.main;
+        view.dispatch({
+          changes: { from: selection.from, to: selection.to, insert: markdown },
+          selection: {
+            anchor: selection.from + markdown.length,
+            head: selection.from + markdown.length,
           },
           scrollIntoView: true,
         });
