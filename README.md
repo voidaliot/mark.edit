@@ -85,7 +85,9 @@ npm test
 
 ## Screenshots
 
-Screenshots coming soon.
+### Windows
+
+![sample](<sample.png>)
 
 ## Known Limitations
 
@@ -102,10 +104,6 @@ Screenshots coming soon.
 - Add find and replace.
 - Add print/export options.
 - Add optional line/word wrap preferences.
-
-## Screenshot (Windows)
-
-![sample](<sample.png>)
 
 ## License
 
