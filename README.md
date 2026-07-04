@@ -98,11 +98,14 @@ Screenshots coming soon.
 
 ## Roadmap
 
-- Add polished app icons and first screenshots.
 - Improve mobile native file import/export.
 - Add find and replace.
 - Add print/export options.
 - Add optional line/word wrap preferences.
+
+## Screenshot (Windows)
+
+![sample](<sample.png>)
 
 ## License
 
