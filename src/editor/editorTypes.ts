@@ -17,6 +17,7 @@ export type SaveStatus =
   | 'Start scratching some Markdown.'
   | 'Saved. Purrfect.'
   | 'Save failed'
+  | 'Open failed'
   | `Opened ${string}`;
 
 export type TextSelectionRange = {

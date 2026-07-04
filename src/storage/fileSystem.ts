@@ -59,8 +59,9 @@ export async function getInitialMarkdownFilesToOpen(): Promise<OpenedMarkdownFil
 
 export async function listenForMarkdownFilesToOpen(
   onOpen: (files: OpenedMarkdownFile[]) => void,
+  onError?: (error: Error) => void,
 ): Promise<() => void> {
-  return listenForMarkdownOpenRequests(onOpen);
+  return listenForMarkdownOpenRequests(onOpen, onError);
 }
 
 export async function saveMarkdownToDevice(

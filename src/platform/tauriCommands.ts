@@ -6,6 +6,11 @@ export type OpenedMarkdownFile = {
   path?: string;
 };
 
+type OpenMarkdownPathsResult = {
+  files: OpenedMarkdownFile[];
+  errors: string[];
+};
+
 export type SavedMarkdownFile = {
   path?: string;
   title?: string;
@@ -35,6 +40,18 @@ function isImageTitle(title: string) {
 
 function ensureMarkdownExtension(title: string) {
   return /\.(md|markdown)$/i.test(title) ? title : `${title}.md`;
+}
+
+function ensureMarkdownPath(path: string) {
+  return isMarkdownTitle(path) ? path : `${path}.md`;
+}
+
+async function writeMarkdownFile(path: string, content: string): Promise<SavedMarkdownFile> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<SavedMarkdownFile>('save_markdown_path', {
+    path: ensureMarkdownPath(path),
+    content,
+  });
 }
 
 function downloadMarkdown(content: string, title: string) {
@@ -125,10 +142,7 @@ export async function openMarkdownFiles(): Promise<OpenedMarkdownFile[]> {
     return openWithBrowserPicker();
   }
 
-  const [{ open }, { readTextFile }] = await Promise.all([
-    import('@tauri-apps/plugin-dialog'),
-    import('@tauri-apps/plugin-fs'),
-  ]);
+  const { open } = await import('@tauri-apps/plugin-dialog');
   const selected = await open({
     multiple: true,
     filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }],
@@ -139,13 +153,7 @@ export async function openMarkdownFiles(): Promise<OpenedMarkdownFile[]> {
   }
 
   const paths = Array.isArray(selected) ? selected : [selected];
-  return Promise.all(
-    paths.filter(isMarkdownTitle).map(async (path) => ({
-      path,
-      title: titleFromPath(path),
-      content: await readTextFile(path),
-    })),
-  );
+  return openMarkdownFilesAtPaths(paths);
 }
 
 export async function saveMarkdownFile(
@@ -162,9 +170,7 @@ export async function saveMarkdownFile(
     return saveMarkdownFileAs(content, title);
   }
 
-  const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-  await writeTextFile(path, content);
-  return { path, title: titleFromPath(path) };
+  return writeMarkdownFile(path, content);
 }
 
 export async function saveMarkdownFileAs(
@@ -176,10 +182,7 @@ export async function saveMarkdownFileAs(
     return { title: ensureMarkdownExtension(title) };
   }
 
-  const [{ save }, { writeTextFile }] = await Promise.all([
-    import('@tauri-apps/plugin-dialog'),
-    import('@tauri-apps/plugin-fs'),
-  ]);
+  const { save } = await import('@tauri-apps/plugin-dialog');
   const path = await save({
     defaultPath: ensureMarkdownExtension(title),
     filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }],
@@ -189,8 +192,7 @@ export async function saveMarkdownFileAs(
     return null;
   }
 
-  await writeTextFile(path, content);
-  return { path, title: titleFromPath(path) };
+  return writeMarkdownFile(path, content);
 }
 
 export async function openMarkdownFilesFromBrowserFiles(
@@ -241,14 +243,25 @@ export async function openMarkdownFilesAtPaths(paths: string[]): Promise<OpenedM
     return [];
   }
 
-  const { readTextFile } = await import('@tauri-apps/plugin-fs');
-  return Promise.all(
-    paths.filter(isMarkdownTitle).map(async (path) => ({
-      path,
-      title: titleFromPath(path),
-      content: await readTextFile(path),
-    })),
-  );
+  const markdownPaths = paths.filter(isMarkdownTitle);
+  if (markdownPaths.length === 0) {
+    return [];
+  }
+
+  const { invoke } = await import('@tauri-apps/api/core');
+  const result = await invoke<OpenMarkdownPathsResult>('open_markdown_paths', {
+    paths: markdownPaths,
+  });
+
+  if (result.errors.length > 0) {
+    const message = result.errors.join('\n');
+    if (result.files.length === 0) {
+      throw new Error(message);
+    }
+    console.warn(message);
+  }
+
+  return result.files;
 }
 
 export async function getInitialMarkdownOpenFiles(): Promise<OpenedMarkdownFile[]> {
@@ -263,6 +276,7 @@ export async function getInitialMarkdownOpenFiles(): Promise<OpenedMarkdownFile[
 
 export async function listenForMarkdownOpenRequests(
   onOpen: (files: OpenedMarkdownFile[]) => void,
+  onError?: (error: Error) => void,
 ): Promise<() => void> {
   if (!isTauriRuntime()) {
     return () => undefined;
@@ -272,21 +286,27 @@ export async function listenForMarkdownOpenRequests(
     import('@tauri-apps/api/event'),
     import('@tauri-apps/api/window'),
   ]);
-  const unlistenOpen = await listen<string[]>('markitty://open-files', async (event) => {
-    const files = await openMarkdownFilesAtPaths(event.payload);
-    if (files.length > 0) {
-      onOpen(files);
+
+  const openPaths = async (paths: string[]) => {
+    try {
+      const files = await openMarkdownFilesAtPaths(paths);
+      if (files.length > 0) {
+        onOpen(files);
+      }
+    } catch (error) {
+      onError?.(error instanceof Error ? error : new Error('Unable to open this file.'));
     }
+  };
+
+  const unlistenOpen = await listen<string[]>('markitty://open-files', (event) => {
+    void openPaths(event.payload);
   });
   const unlistenDrop = await getCurrentWindow().onDragDropEvent(async (event) => {
     if (event.payload.type !== 'drop') {
       return;
     }
 
-    const files = await openMarkdownFilesAtPaths(event.payload.paths);
-    if (files.length > 0) {
-      onOpen(files);
-    }
+    await openPaths(event.payload.paths);
   });
 
   return () => {

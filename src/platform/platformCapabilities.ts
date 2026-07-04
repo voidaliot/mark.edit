@@ -1,3 +1,5 @@
+import { isTauri as isTauriEnvironment } from '@tauri-apps/api/core';
+
 export type PlatformCapabilities = {
   isTauri: boolean;
   canOpenFiles: boolean;
@@ -7,16 +9,12 @@ export type PlatformCapabilities = {
   isMobileLike: boolean;
 };
 
-type WindowWithTauri = Window & {
-  __TAURI_INTERNALS__?: unknown;
-};
-
 export function isTauriRuntime() {
   if (typeof window === 'undefined') {
     return false;
   }
 
-  return Boolean((window as WindowWithTauri).__TAURI_INTERNALS__);
+  return isTauriEnvironment();
 }
 
 export function getPlatformCapabilities(isWideLayout: boolean): PlatformCapabilities {

@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { clearMocks, mockConvertFileSrc } from '@tauri-apps/api/mocks';
 import { renderMarkdown } from '../src/editor/markdownRenderer';
 
 describe('renderMarkdown', () => {
   afterEach(() => {
     clearMocks();
+    vi.unstubAllGlobals();
   });
 
   it('marks local file links as attachments', () => {
@@ -15,6 +16,7 @@ describe('renderMarkdown', () => {
   });
 
   it('resolves relative image paths through the Tauri asset protocol', () => {
+    vi.stubGlobal('isTauri', true);
     mockConvertFileSrc('windows');
 
     const html = renderMarkdown('![cat](<images/cat pic.png>)', {
@@ -26,6 +28,7 @@ describe('renderMarkdown', () => {
   });
 
   it('resolves relative attachment links through the Tauri asset protocol', () => {
+    vi.stubGlobal('isTauri', true);
     mockConvertFileSrc('windows');
 
     const html = renderMarkdown('[report](<files/report final.pdf>)', {

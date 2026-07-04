@@ -60,6 +60,10 @@ type WorkspaceState = {
   activeDocumentId: string;
 };
 
+function documentPathKey(path?: string) {
+  return path ? path.replace(/\\/g, '/').toLowerCase() : undefined;
+}
+
 function loadInitialWorkspace(): WorkspaceState {
   const workspaceDraft = loadWorkspaceDraft();
   if (workspaceDraft) {
@@ -107,6 +111,7 @@ export function MarkdownEditorPage() {
   const [activeDocumentId, setActiveDocumentId] = useState(
     () => initialWorkspaceRef.current?.activeDocumentId ?? documents[0].id,
   );
+  const documentsRef = useRef(documents);
   const [requestedMode, setRequestedMode] = useState<EditorMode>('split');
   const [splitEditorPercent, setSplitEditorPercent] = useState(loadSplitEditorPercent);
   const [resizingPointerId, setResizingPointerId] = useState<number | null>(null);
@@ -123,6 +128,10 @@ export function MarkdownEditorPage() {
   );
   const stats = useMemo(() => getDocumentStats(document.content), [document.content]);
   const { theme, toggleTheme } = useTheme();
+
+  useEffect(() => {
+    documentsRef.current = documents;
+  }, [documents]);
 
   useEffect(() => {
     saveWorkspaceDraft({ documents, activeDocumentId: document.id });
@@ -144,7 +153,11 @@ export function MarkdownEditorPage() {
   );
 
   const addDocumentTab = useCallback((nextDocument: MarkittyDocument, nextMode: EditorMode = 'edit') => {
-    setDocuments((currentDocuments) => [...currentDocuments, nextDocument]);
+    setDocuments((currentDocuments) => {
+      const updatedDocuments = [...currentDocuments, nextDocument];
+      documentsRef.current = updatedDocuments;
+      return updatedDocuments;
+    });
     setActiveDocumentId(nextDocument.id);
     setRequestedMode(nextMode);
     window.setTimeout(() => editorRef.current?.focus(), 0);
@@ -156,10 +169,49 @@ export function MarkdownEditorPage() {
         return;
       }
 
-      setDocuments((currentDocuments) => [...currentDocuments, ...nextDocuments]);
-      setActiveDocumentId(nextDocuments[nextDocuments.length - 1].id);
+      const currentDocuments = documentsRef.current;
+      const existingByPath = new Map<string, MarkittyDocument>();
+      currentDocuments.forEach((currentDocument) => {
+        const key = documentPathKey(currentDocument.path);
+        if (key) {
+          existingByPath.set(key, currentDocument);
+        }
+      });
+
+      const documentsToAdd = nextDocuments.filter((nextDocument) => {
+        const key = documentPathKey(nextDocument.path);
+        if (!key) {
+          return true;
+        }
+
+        if (existingByPath.has(key)) {
+          return false;
+        }
+
+        existingByPath.set(key, nextDocument);
+        return true;
+      });
+      const nextActiveDocument = [...nextDocuments]
+        .reverse()
+        .map((nextDocument) => {
+          const key = documentPathKey(nextDocument.path);
+          return key ? existingByPath.get(key) : nextDocument;
+        })
+        .find((nextDocument): nextDocument is MarkittyDocument => Boolean(nextDocument));
+
+      if (!nextActiveDocument) {
+        return;
+      }
+
+      if (documentsToAdd.length > 0) {
+        const updatedDocuments = [...currentDocuments, ...documentsToAdd];
+        documentsRef.current = updatedDocuments;
+        setDocuments(updatedDocuments);
+      }
+
+      setActiveDocumentId(nextActiveDocument.id);
       setRequestedMode(nextMode);
-      setSaveStatus(`Opened ${nextDocuments[nextDocuments.length - 1].title}`);
+      setSaveStatus(`Opened ${nextActiveDocument.title}`);
       setErrorMessage(null);
       window.setTimeout(() => editorRef.current?.focus(), 0);
     },
@@ -223,14 +275,23 @@ export function MarkdownEditorPage() {
     setErrorMessage(null);
   };
 
+  const handleOpenError = useCallback((error: Error) => {
+    setErrorMessage(error.message);
+    setSaveStatus('Open failed');
+  }, []);
+
   const handleOpen = async () => {
     setErrorMessage(null);
-    const opened = await openMarkdownFilesFromDevice();
-    if (opened.length === 0) {
-      return;
-    }
+    try {
+      const opened = await openMarkdownFilesFromDevice();
+      if (opened.length === 0) {
+        return;
+      }
 
-    addDocumentTabs(opened.map(documentFromFile), 'split');
+      addDocumentTabs(opened.map(documentFromFile), 'split');
+    } catch (error) {
+      handleOpenError(error instanceof Error ? error : new Error('Unable to open this file.'));
+    }
   };
 
   useEffect(() => {
@@ -238,14 +299,31 @@ export function MarkdownEditorPage() {
     let unlisten: () => void = () => undefined;
 
     const setupOpenListeners = async () => {
-      const initialFiles = await getInitialMarkdownFilesToOpen();
-      if (!isDisposed && initialFiles.length > 0) {
-        addDocumentTabs(initialFiles.map(documentFromFile), 'split');
+      try {
+        const initialFiles = await getInitialMarkdownFilesToOpen();
+        if (!isDisposed && initialFiles.length > 0) {
+          addDocumentTabs(initialFiles.map(documentFromFile), 'split');
+        }
+      } catch (error) {
+        if (!isDisposed) {
+          handleOpenError(error instanceof Error ? error : new Error('Unable to open this file.'));
+        }
       }
 
-      unlisten = await listenForMarkdownFilesToOpen((files) => {
-        addDocumentTabs(files.map(documentFromFile), 'split');
-      });
+      if (isDisposed) {
+        return;
+      }
+
+      unlisten = await listenForMarkdownFilesToOpen(
+        (files) => {
+          addDocumentTabs(files.map(documentFromFile), 'split');
+        },
+        (error) => {
+          if (!isDisposed) {
+            handleOpenError(error);
+          }
+        },
+      );
     };
 
     void setupOpenListeners();
@@ -254,7 +332,7 @@ export function MarkdownEditorPage() {
       isDisposed = true;
       unlisten();
     };
-  }, [addDocumentTabs]);
+  }, [addDocumentTabs, handleOpenError]);
 
   useEffect(() => {
     let isDisposed = false;
