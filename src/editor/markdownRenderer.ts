@@ -4,7 +4,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { isTauriRuntime } from '../platform/platformCapabilities';
 
 const markdownRenderer = new MarkdownIt({
-  html: false,
+  html: true,
   linkify: true,
   typographer: true,
 });
@@ -25,6 +25,56 @@ function getDirectoryName(path: string) {
   const normalized = normalizePathSeparators(path);
   const separatorIndex = normalized.lastIndexOf('/');
   return separatorIndex === -1 ? '' : normalized.slice(0, separatorIndex);
+}
+
+function splitPathRoot(path: string) {
+  const normalized = normalizePathSeparators(path);
+  const windowsRoot = normalized.match(/^[A-Za-z]:\//);
+  if (windowsRoot) {
+    return {
+      root: windowsRoot[0],
+      rest: normalized.slice(windowsRoot[0].length),
+    };
+  }
+
+  const uncRoot = normalized.match(/^\/\/[^/]+\/[^/]+\/?/);
+  if (uncRoot) {
+    return {
+      root: uncRoot[0].endsWith('/') ? uncRoot[0] : `${uncRoot[0]}/`,
+      rest: normalized.slice(uncRoot[0].length),
+    };
+  }
+
+  if (normalized.startsWith('/')) {
+    return { root: '/', rest: normalized.slice(1) };
+  }
+
+  return { root: '', rest: normalized };
+}
+
+function normalizeLocalPath(path: string) {
+  const { root, rest } = splitPathRoot(path);
+  const segments: string[] = [];
+
+  for (const segment of rest.split('/')) {
+    if (!segment || segment === '.') {
+      continue;
+    }
+
+    if (segment === '..') {
+      const lastSegment = segments.at(-1);
+      if (lastSegment && lastSegment !== '..') {
+        segments.pop();
+      } else if (!root) {
+        segments.push(segment);
+      }
+      continue;
+    }
+
+    segments.push(segment);
+  }
+
+  return root ? `${root}${segments.join('/')}` : segments.join('/');
 }
 
 function hasUrlProtocol(url: string) {
@@ -71,7 +121,7 @@ function splitUrlSuffix(url: string) {
 function resolveLocalPath(path: string, documentPath?: string) {
   const decodedPath = normalizePathSeparators(decodeMarkdownUrl(path));
   if (isLocalAbsolutePath(decodedPath)) {
-    return decodedPath;
+    return normalizeLocalPath(decodedPath);
   }
 
   if (!documentPath) {
@@ -83,7 +133,7 @@ function resolveLocalPath(path: string, documentPath?: string) {
     return null;
   }
 
-  return `${normalizePathSeparators(documentDirectory)}/${decodedPath}`;
+  return normalizeLocalPath(`${normalizePathSeparators(documentDirectory)}/${decodedPath}`);
 }
 
 function resolveTauriAssetUrl(url: string, documentPath?: string) {
@@ -103,6 +153,45 @@ function isLikelyAttachmentLink(url: string) {
 
   const { path } = splitUrlSuffix(url);
   return /\/?[^/]+\.[a-z0-9]{1,12}$/i.test(normalizePathSeparators(path));
+}
+
+function prepareRenderedHtml(rendered: string, documentPath?: string) {
+  if (typeof document === 'undefined') {
+    return rendered;
+  }
+
+  const template = document.createElement('template');
+  template.innerHTML = rendered;
+
+  for (const image of template.content.querySelectorAll<HTMLImageElement>('img[src]')) {
+    const src = image.getAttribute('src') ?? '';
+    const assetUrl = resolveTauriAssetUrl(src, documentPath);
+    if (assetUrl) {
+      image.setAttribute('src', assetUrl);
+    }
+
+    if (!image.hasAttribute('loading')) {
+      image.setAttribute('loading', 'lazy');
+    }
+  }
+
+  for (const link of template.content.querySelectorAll<HTMLAnchorElement>('a[href]')) {
+    const href = link.getAttribute('href') ?? '';
+    if (/^https?:\/\//i.test(href)) {
+      link.setAttribute('target', '_blank');
+      link.setAttribute('rel', 'noopener noreferrer');
+    }
+
+    if (isLikelyAttachmentLink(href)) {
+      link.classList.add('attachment-link');
+      const assetUrl = resolveTauriAssetUrl(href, documentPath);
+      if (assetUrl) {
+        link.setAttribute('href', assetUrl);
+      }
+    }
+  }
+
+  return template.innerHTML;
 }
 
 const defaultLinkOpen =
@@ -148,7 +237,8 @@ markdownRenderer.renderer.rules.image = (tokens, index, options, env, self) => {
 
 export function renderMarkdown(content: string, options: RenderMarkdownOptions = {}) {
   const rendered = markdownRenderer.render(content, options);
-  return DOMPurify.sanitize(rendered, {
+  const prepared = prepareRenderedHtml(rendered, options.documentPath);
+  return DOMPurify.sanitize(prepared, {
     ADD_ATTR: ['download', 'loading'],
     ALLOWED_URI_REGEXP:
       /^(?:(?:https?|mailto|tel|data|blob|asset):|[a-z]:[\\/]|[/.#?]|[^a-z]|[a-z0-9._~%+-]+(?:[/?#]|$))/i,

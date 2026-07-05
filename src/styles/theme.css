@@ -405,6 +405,23 @@
   font-size: 1.22rem;
 }
 
+.markdown-preview [align="center"] {
+  text-align: center;
+}
+
+.markdown-preview [align="right"] {
+  text-align: right;
+}
+
+.markdown-preview [align="center"] > img {
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.markdown-preview [align="right"] > img {
+  margin-left: auto;
+}
+
 .markdown-preview p,
 .markdown-preview ul,
 .markdown-preview ol,
