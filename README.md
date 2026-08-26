@@ -89,15 +89,6 @@ npm test
 
 ![sample](<sample.png>)
 
-## Known Limitations
-
-- Browser fallback save downloads a new Markdown file instead of writing back to the original path.
-- Browser fallback embeds use filenames because browsers do not expose full local file paths.
-- Native mobile file handling is intentionally minimal in the MVP.
-- Tauri edit permissions are scoped to Markdown files; preview assets can load from common user directories for local embeds.
-- Unsaved tab close confirmation is not implemented yet.
-- There is no cloud sync, login, collaboration, AI, plugin system, or workspace management.
-
 ## Roadmap
 
 - Improve mobile native file import/export.
