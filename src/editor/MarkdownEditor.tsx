@@ -15,7 +15,7 @@ import {
 import { markdown } from '@codemirror/lang-markdown';
 import {
   bracketMatching,
-  defaultHighlightStyle,
+  HighlightStyle,
   indentOnInput,
   syntaxHighlighting,
 } from '@codemirror/language';
@@ -28,6 +28,7 @@ import {
   lineNumbers,
   placeholder,
 } from '@codemirror/view';
+import { tags } from '@lezer/highlight';
 import type { ThemeMode } from '../app/themeContext';
 import { applyEditorAction } from './editorActions';
 import type { EditorActionId } from './editorTypes';
@@ -44,6 +45,36 @@ type MarkdownEditorProps = {
   onChange: (value: string) => void;
   theme: ThemeMode;
 };
+
+const markdownHighlightStyle = HighlightStyle.define([
+  {
+    tag: tags.heading,
+    color: 'var(--syntax-heading)',
+    fontWeight: '700',
+  },
+  {
+    tag: tags.strong,
+    color: 'var(--syntax-strong)',
+    fontWeight: '700',
+  },
+  {
+    tag: tags.emphasis,
+    color: 'var(--syntax-emphasis)',
+    fontStyle: 'italic',
+  },
+  { tag: tags.link, color: 'var(--syntax-link)' },
+  { tag: tags.url, color: 'var(--syntax-url)', textDecoration: 'underline' },
+  { tag: tags.monospace, color: 'var(--syntax-code)' },
+  { tag: tags.quote, color: 'var(--syntax-quote)' },
+  {
+    tag: [tags.meta, tags.processingInstruction],
+    color: 'var(--syntax-meta)',
+  },
+  {
+    tag: [tags.punctuation, tags.bracket, tags.contentSeparator],
+    color: 'var(--syntax-punctuation)',
+  },
+]);
 
 function createEditorTheme(theme: ThemeMode) {
   return EditorView.theme(
@@ -108,7 +139,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         indentOnInput(),
         bracketMatching(),
         markdown(),
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        syntaxHighlighting(markdownHighlightStyle),
         EditorView.lineWrapping,
         placeholder('Start scratching some Markdown.'),
         keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
