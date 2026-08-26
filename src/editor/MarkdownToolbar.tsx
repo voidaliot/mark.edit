@@ -20,6 +20,7 @@ import {
   Save,
   SavePen,
   Sun,
+  Undo2,
 } from 'lucide-react';
 import { IconButton } from '../shared/components/IconButton';
 import type { ThemeMode } from '../app/themeContext';
@@ -41,6 +42,7 @@ type MarkdownToolbarProps = {
   onSave: () => void;
   onSaveAs: () => void;
   onToggleTheme: () => void;
+  onUndo: () => void;
 };
 
 const formattingActions: Array<{
@@ -79,6 +81,7 @@ export function MarkdownToolbar({
   onSave,
   onSaveAs,
   onToggleTheme,
+  onUndo,
 }: MarkdownToolbarProps) {
   return (
     <nav className="formatting-toolbar" aria-label="Markdown tools">
@@ -103,6 +106,10 @@ export function MarkdownToolbar({
         onClick={() => onModeChange('split')}
       >
         <Columns2 size={17} aria-hidden="true" />
+      </IconButton>
+      <span className="tool-separator" aria-hidden="true" />
+      <IconButton label="Undo" onClick={onUndo} disabled={mode === 'preview'}>
+        <Undo2 size={17} aria-hidden="true" />
       </IconButton>
       <span className="tool-separator" aria-hidden="true" />
       {formattingActions.map((action) => (

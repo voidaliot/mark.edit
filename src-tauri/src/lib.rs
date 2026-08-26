@@ -1,3 +1,4 @@
+use std::path::Path;
 use tauri::{Emitter, Manager};
 
 #[derive(serde::Serialize)]
@@ -19,9 +20,12 @@ struct SavedMarkdownFile {
   path: String,
 }
 
-fn is_markdown_path(path: &str) -> bool {
+fn is_text_document_path(path: &str) -> bool {
   let lower = path.to_ascii_lowercase();
-  lower.ends_with(".md") || lower.ends_with(".markdown")
+  lower.ends_with(".md")
+    || lower.ends_with(".markdown")
+    || lower.ends_with(".txt")
+    || lower.ends_with(".text")
 }
 
 fn title_from_path(path: &str) -> String {
@@ -32,13 +36,20 @@ fn title_from_path(path: &str) -> String {
     .to_string()
 }
 
+fn allow_asset_directory_for_path(app: &tauri::AppHandle, path: &str) {
+  let path = Path::new(path);
+  if let Some(directory) = path.parent() {
+    let _ = app.asset_protocol_scope().allow_directory(directory, true);
+  }
+}
+
 fn markdown_paths_from_args<I>(args: I) -> Vec<String>
 where
   I: IntoIterator<Item = String>,
 {
   args
     .into_iter()
-    .filter(|arg| is_markdown_path(arg))
+    .filter(|arg| is_text_document_path(arg))
     .collect()
 }
 
@@ -48,17 +59,20 @@ fn initial_open_paths() -> Vec<String> {
 }
 
 #[tauri::command]
-fn open_markdown_paths(paths: Vec<String>) -> OpenMarkdownPathsResult {
+fn open_markdown_paths(app: tauri::AppHandle, paths: Vec<String>) -> OpenMarkdownPathsResult {
   let mut files = Vec::new();
   let mut errors = Vec::new();
 
-  for path in paths.into_iter().filter(|path| is_markdown_path(path)) {
+  for path in paths.into_iter().filter(|path| is_text_document_path(path)) {
     match std::fs::read_to_string(&path) {
-      Ok(content) => files.push(OpenedMarkdownFile {
-        title: title_from_path(&path),
-        content,
-        path,
-      }),
+      Ok(content) => {
+        allow_asset_directory_for_path(&app, &path);
+        files.push(OpenedMarkdownFile {
+          title: title_from_path(&path),
+          content,
+          path,
+        });
+      }
       Err(error) => errors.push(format!("Unable to open {}: {}", path, error)),
     }
   }
@@ -67,18 +81,36 @@ fn open_markdown_paths(paths: Vec<String>) -> OpenMarkdownPathsResult {
 }
 
 #[tauri::command]
-fn save_markdown_path(path: String, content: String) -> Result<SavedMarkdownFile, String> {
-  if !is_markdown_path(&path) {
-    return Err("Only Markdown files can be saved.".to_string());
+fn save_markdown_path(
+  app: tauri::AppHandle,
+  path: String,
+  content: String,
+) -> Result<SavedMarkdownFile, String> {
+  if !is_text_document_path(&path) {
+    return Err("Only Markdown or text files can be saved.".to_string());
   }
 
   std::fs::write(&path, content)
     .map_err(|error| format!("Unable to save {}: {}", path, error))?;
 
+  allow_asset_directory_for_path(&app, &path);
+
   Ok(SavedMarkdownFile {
     title: title_from_path(&path),
     path,
   })
+}
+
+#[tauri::command]
+fn allow_asset_paths(app: tauri::AppHandle, paths: Vec<String>) -> Result<(), String> {
+  for path in paths {
+    app
+      .asset_protocol_scope()
+      .allow_file(Path::new(&path))
+      .map_err(|error| format!("Unable to authorize {}: {}", path, error))?;
+  }
+
+  Ok(())
 }
 
 fn emit_open_paths(app: &tauri::AppHandle, paths: Vec<String>) {
@@ -110,6 +142,7 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       initial_open_paths,
       open_markdown_paths,
+      allow_asset_paths,
       save_markdown_path
     ])
     .setup(|app| {
@@ -132,7 +165,7 @@ pub fn run() {
         .into_iter()
         .filter_map(|url| url.to_file_path().ok())
         .filter_map(|path| path.into_os_string().into_string().ok())
-        .filter(|path| is_markdown_path(path))
+        .filter(|path| is_text_document_path(path))
         .collect();
       emit_open_paths(app_handle, paths);
     }

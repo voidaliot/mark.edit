@@ -15,6 +15,7 @@ type RenderMarkdownOptions = {
 
 type MarkdownRenderEnv = {
   documentPath?: string;
+  localPathCollector?: (path: string) => void;
 };
 
 function normalizePathSeparators(path: string) {
@@ -136,14 +137,65 @@ function resolveLocalPath(path: string, documentPath?: string) {
   return normalizeLocalPath(`${normalizePathSeparators(documentDirectory)}/${decodedPath}`);
 }
 
-function resolveTauriAssetUrl(url: string, documentPath?: string) {
-  if (!isTauriRuntime() || !isResolvableMarkdownPath(url)) {
+function resolveLocalResourcePath(url: string, documentPath?: string) {
+  if (!isResolvableMarkdownPath(url)) {
     return null;
   }
 
-  const { path, suffix } = splitUrlSuffix(url);
-  const resolvedPath = resolveLocalPath(path, documentPath);
+  const { path } = splitUrlSuffix(url);
+  return resolveLocalPath(path, documentPath);
+}
+
+function resolveTauriAssetUrl(url: string, documentPath?: string) {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+
+  const { suffix } = splitUrlSuffix(url);
+  const resolvedPath = resolveLocalResourcePath(url, documentPath);
   return resolvedPath ? `${convertFileSrc(resolvedPath)}${suffix}` : null;
+}
+
+function collectLocalResourcePath(
+  url: string,
+  documentPath: string | undefined,
+  collector: ((path: string) => void) | undefined,
+) {
+  if (!collector) {
+    return;
+  }
+
+  const resolvedPath = resolveLocalResourcePath(url, documentPath);
+  if (resolvedPath) {
+    collector(resolvedPath);
+  }
+}
+
+function isOpenableTextDocumentLink(url: string) {
+  if (!isResolvableMarkdownPath(url)) {
+    return false;
+  }
+
+  const { path } = splitUrlSuffix(url);
+  return /\.(md|markdown|txt|text)$/i.test(normalizePathSeparators(path));
+}
+
+export function resolveMarkdownResourcePath(url: string, documentPath?: string) {
+  return resolveLocalResourcePath(url, documentPath);
+}
+
+export function collectMarkdownResourcePaths(
+  content: string,
+  options: RenderMarkdownOptions = {},
+) {
+  const paths = new Set<string>();
+  const collector = (path: string) => paths.add(path);
+  const rendered = markdownRenderer.render(content, {
+    ...options,
+    localPathCollector: collector,
+  } satisfies MarkdownRenderEnv);
+  prepareRenderedHtml(rendered, options.documentPath, collector);
+  return [...paths];
 }
 
 function isLikelyAttachmentLink(url: string) {
@@ -155,7 +207,11 @@ function isLikelyAttachmentLink(url: string) {
   return /\/?[^/]+\.[a-z0-9]{1,12}$/i.test(normalizePathSeparators(path));
 }
 
-function prepareRenderedHtml(rendered: string, documentPath?: string) {
+function prepareRenderedHtml(
+  rendered: string,
+  documentPath?: string,
+  localPathCollector?: (path: string) => void,
+) {
   if (typeof document === 'undefined') {
     return rendered;
   }
@@ -165,6 +221,7 @@ function prepareRenderedHtml(rendered: string, documentPath?: string) {
 
   for (const image of template.content.querySelectorAll<HTMLImageElement>('img[src]')) {
     const src = image.getAttribute('src') ?? '';
+    collectLocalResourcePath(src, documentPath, localPathCollector);
     const assetUrl = resolveTauriAssetUrl(src, documentPath);
     if (assetUrl) {
       image.setAttribute('src', assetUrl);
@@ -182,8 +239,18 @@ function prepareRenderedHtml(rendered: string, documentPath?: string) {
       link.setAttribute('rel', 'noopener noreferrer');
     }
 
+    if (isOpenableTextDocumentLink(href)) {
+      const resolvedPath = resolveLocalResourcePath(href, documentPath);
+      if (resolvedPath) {
+        link.classList.add('document-link');
+        link.setAttribute('data-markitty-open-path', resolvedPath);
+      }
+      continue;
+    }
+
     if (isLikelyAttachmentLink(href)) {
       link.classList.add('attachment-link');
+      collectLocalResourcePath(href, documentPath, localPathCollector);
       const assetUrl = resolveTauriAssetUrl(href, documentPath);
       if (assetUrl) {
         link.setAttribute('href', assetUrl);
@@ -207,8 +274,18 @@ markdownRenderer.renderer.rules.link_open = (tokens, index, options, env, self) 
     token.attrSet('rel', 'noopener noreferrer');
   }
 
+  if (isOpenableTextDocumentLink(href)) {
+    const resolvedPath = resolveLocalResourcePath(href, renderEnv.documentPath);
+    if (resolvedPath) {
+      token.attrJoin('class', 'document-link');
+      token.attrSet('data-markitty-open-path', resolvedPath);
+    }
+    return defaultLinkOpen(tokens, index, options, env, self);
+  }
+
   if (isLikelyAttachmentLink(href)) {
     token.attrJoin('class', 'attachment-link');
+    collectLocalResourcePath(href, renderEnv.documentPath, renderEnv.localPathCollector);
     const assetUrl = resolveTauriAssetUrl(href, renderEnv.documentPath);
     if (assetUrl) {
       token.attrSet('href', assetUrl);
@@ -226,6 +303,7 @@ markdownRenderer.renderer.rules.image = (tokens, index, options, env, self) => {
   const token = tokens[index];
   const renderEnv = env as MarkdownRenderEnv;
   const src = token.attrGet('src') ?? '';
+  collectLocalResourcePath(src, renderEnv.documentPath, renderEnv.localPathCollector);
   const assetUrl = resolveTauriAssetUrl(src, renderEnv.documentPath);
   if (assetUrl) {
     token.attrSet('src', assetUrl);
@@ -239,7 +317,7 @@ export function renderMarkdown(content: string, options: RenderMarkdownOptions =
   const rendered = markdownRenderer.render(content, options);
   const prepared = prepareRenderedHtml(rendered, options.documentPath);
   return DOMPurify.sanitize(prepared, {
-    ADD_ATTR: ['download', 'loading'],
+    ADD_ATTR: ['data-markitty-open-path', 'download', 'loading'],
     ALLOWED_URI_REGEXP:
       /^(?:(?:https?|mailto|tel|data|blob|asset):|[a-z]:[\\/]|[/.#?]|[^a-z]|[a-z0-9._~%+-]+(?:[/?#]|$))/i,
     USE_PROFILES: { html: true },

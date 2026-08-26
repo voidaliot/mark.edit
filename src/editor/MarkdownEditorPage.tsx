@@ -17,6 +17,7 @@ import {
   listenForMarkdownFilesToOpen,
   openMarkdownFilesFromDevice,
   openMarkdownFromDroppedFiles,
+  openMarkdownFromPaths,
   pickFilesForEmbedding,
   saveMarkdownToDevice,
   saveMarkdownToNewPath,
@@ -223,6 +224,10 @@ export function MarkdownEditorPage() {
     window.setTimeout(() => editorRef.current?.applyAction(action), 0);
   };
 
+  const handleUndo = () => {
+    editorRef.current?.undo();
+  };
+
   const insertEmbeddedFiles = useCallback(
     (
       files: Array<{ title: string; path: string }>,
@@ -293,6 +298,23 @@ export function MarkdownEditorPage() {
       handleOpenError(error instanceof Error ? error : new Error('Unable to open this file.'));
     }
   };
+
+  const handleOpenPreviewDocument = useCallback(
+    async (path: string) => {
+      setErrorMessage(null);
+      try {
+        const opened = await openMarkdownFromPaths([path]);
+        if (opened.length === 0) {
+          return;
+        }
+
+        addDocumentTabs(opened.map(documentFromFile), 'split');
+      } catch (error) {
+        handleOpenError(error instanceof Error ? error : new Error('Unable to open this file.'));
+      }
+    },
+    [addDocumentTabs, handleOpenError],
+  );
 
   useEffect(() => {
     let isDisposed = false;
@@ -552,6 +574,7 @@ export function MarkdownEditorPage() {
           onSave={handleSave}
           onSaveAs={handleSaveAs}
           onToggleTheme={toggleTheme}
+          onUndo={handleUndo}
         />
       </header>
 
@@ -599,7 +622,11 @@ export function MarkdownEditorPage() {
           />
         ) : null}
         {showPreview ? (
-          <MarkdownPreview content={document.content} documentPath={document.path} />
+          <MarkdownPreview
+            content={document.content}
+            documentPath={document.path}
+            onOpenDocumentPath={handleOpenPreviewDocument}
+          />
         ) : null}
       </section>
 

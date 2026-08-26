@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { clearMocks, mockConvertFileSrc } from '@tauri-apps/api/mocks';
-import { renderMarkdown } from '../src/editor/markdownRenderer';
+import {
+  collectMarkdownResourcePaths,
+  renderMarkdown,
+  resolveMarkdownResourcePath,
+} from '../src/editor/markdownRenderer';
 
 describe('renderMarkdown', () => {
   afterEach(() => {
@@ -15,6 +19,27 @@ describe('renderMarkdown', () => {
     expect(html).toContain('class="attachment-link"');
   });
 
+  it('marks local Markdown and text links as openable documents', () => {
+    const html = renderMarkdown(
+      [
+        '[index](<../index.md>)',
+        '[syntax](<syntax.txt>)',
+      ].join('\n'),
+      { documentPath: 'E:\\GitHub\\mycelium-hypha\\knowledge\\textual-notation\\index.md' },
+    );
+
+    expect(html).toContain('href="../index.md"');
+    expect(html).toContain('href="syntax.txt"');
+    expect(html).toContain('class="document-link"');
+    expect(html).toContain(
+      'data-markitty-open-path="E:/GitHub/mycelium-hypha/knowledge/index.md"',
+    );
+    expect(html).toContain(
+      'data-markitty-open-path="E:/GitHub/mycelium-hypha/knowledge/textual-notation/syntax.txt"',
+    );
+    expect(html).not.toContain('attachment-link');
+  });
+
   it('resolves relative image paths through the Tauri asset protocol', () => {
     vi.stubGlobal('isTauri', true);
     mockConvertFileSrc('windows');
@@ -25,6 +50,32 @@ describe('renderMarkdown', () => {
 
     expect(html).toContain('src="http://asset.localhost/C%3A%2Fdocs%2Fimages%2Fcat%20pic.png"');
     expect(html).toContain('loading="lazy"');
+  });
+
+  it('resolves local resource paths relative to the opened Markdown file', () => {
+    const path = resolveMarkdownResourcePath(
+      'pictures/diagram.png',
+      'E:\\GitHub\\sysml-v2-vscext\\docs\\issues.md',
+    );
+
+    expect(path).toBe('E:/GitHub/sysml-v2-vscext/docs/pictures/diagram.png');
+  });
+
+  it('collects Markdown and HTML local resources for asset authorization', () => {
+    const paths = collectMarkdownResourcePaths(
+      [
+        '![diagram](<pictures/diagram.png>)',
+        '[spec](<../resources/spec final.pdf>)',
+        '<img src="screenshots/ui.png" alt="UI">',
+      ].join('\n'),
+      { documentPath: 'E:\\GitHub\\sysml-v2-vscext\\docs\\issues.md' },
+    );
+
+    expect(paths).toEqual([
+      'E:/GitHub/sysml-v2-vscext/docs/pictures/diagram.png',
+      'E:/GitHub/sysml-v2-vscext/resources/spec final.pdf',
+      'E:/GitHub/sysml-v2-vscext/docs/screenshots/ui.png',
+    ]);
   });
 
   it('normalizes parent segments in relative image paths before using the Tauri asset protocol', () => {

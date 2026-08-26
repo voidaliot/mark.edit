@@ -25,6 +25,7 @@ export type PickedEmbeddedFile = {
 };
 
 const imageExtensions = ['avif', 'bmp', 'gif', 'jpg', 'jpeg', 'png', 'svg', 'webp'];
+const textDocumentExtensions = ['md', 'markdown', 'txt', 'text'];
 
 function titleFromPath(path: string) {
   return path.split(/[\\/]/).pop() || 'Untitled.md';
@@ -32,6 +33,10 @@ function titleFromPath(path: string) {
 
 function isMarkdownTitle(title: string) {
   return /\.(md|markdown)$/i.test(title);
+}
+
+function isTextDocumentTitle(title: string) {
+  return new RegExp(`\\.(${textDocumentExtensions.join('|')})$`, 'i').test(title);
 }
 
 function isImageTitle(title: string) {
@@ -42,14 +47,22 @@ function ensureMarkdownExtension(title: string) {
   return /\.(md|markdown)$/i.test(title) ? title : `${title}.md`;
 }
 
+function ensureTextDocumentExtension(title: string) {
+  return isTextDocumentTitle(title) ? title : ensureMarkdownExtension(title);
+}
+
 function ensureMarkdownPath(path: string) {
   return isMarkdownTitle(path) ? path : `${path}.md`;
+}
+
+function ensureTextDocumentPath(path: string) {
+  return isTextDocumentTitle(path) ? path : ensureMarkdownPath(path);
 }
 
 async function writeMarkdownFile(path: string, content: string): Promise<SavedMarkdownFile> {
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke<SavedMarkdownFile>('save_markdown_path', {
-    path: ensureMarkdownPath(path),
+    path: ensureTextDocumentPath(path),
     content,
   });
 }
@@ -59,13 +72,13 @@ function downloadMarkdown(content: string, title: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = ensureMarkdownExtension(title);
+  anchor.download = ensureTextDocumentExtension(title);
   anchor.click();
   URL.revokeObjectURL(url);
 }
 
 function fileToOpenedMarkdown(file: File): Promise<OpenedMarkdownFile | null> {
-  if (!isMarkdownTitle(file.name)) {
+  if (!isTextDocumentTitle(file.name) && file.type !== 'text/plain') {
     return Promise.resolve(null);
   }
 
@@ -80,7 +93,7 @@ function openWithBrowserPicker(): Promise<OpenedMarkdownFile[]> {
     const input = document.createElement('input');
     input.type = 'file';
     input.multiple = true;
-    input.accept = '.md,.markdown,text/markdown,text/plain';
+    input.accept = '.md,.markdown,.txt,.text,text/markdown,text/plain';
 
     input.addEventListener('change', async () => {
       const files = input.files;
@@ -121,10 +134,10 @@ function pickBrowserFilesForEmbedding(kind: EmbeddedFileKind): Promise<PickedEmb
 function embeddedFilesFromPaths(
   paths: string[],
   kind: EmbeddedFileKind,
-  skipMarkdown: boolean,
+  skipTextDocuments: boolean,
 ): PickedEmbeddedFile[] {
   return paths
-    .filter((path) => !skipMarkdown || !isMarkdownTitle(path))
+    .filter((path) => !skipTextDocuments || !isTextDocumentTitle(path))
     .filter((path) => kind === 'file' || isImageTitle(path))
     .map((path) => ({
       title: titleFromPath(path),
@@ -145,7 +158,7 @@ export async function openMarkdownFiles(): Promise<OpenedMarkdownFile[]> {
   const { open } = await import('@tauri-apps/plugin-dialog');
   const selected = await open({
     multiple: true,
-    filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }],
+    filters: [{ name: 'Markdown and text', extensions: textDocumentExtensions }],
   });
 
   if (!selected) {
@@ -163,7 +176,7 @@ export async function saveMarkdownFile(
 ): Promise<SavedMarkdownFile | null> {
   if (!isTauriRuntime()) {
     downloadMarkdown(content, title);
-    return { title: ensureMarkdownExtension(title) };
+    return { title: ensureTextDocumentExtension(title) };
   }
 
   if (!path) {
@@ -184,8 +197,8 @@ export async function saveMarkdownFileAs(
 
   const { save } = await import('@tauri-apps/plugin-dialog');
   const path = await save({
-    defaultPath: ensureMarkdownExtension(title),
-    filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }],
+    defaultPath: ensureTextDocumentExtension(title),
+    filters: [{ name: 'Markdown and text', extensions: textDocumentExtensions }],
   });
 
   if (!path) {
@@ -205,10 +218,10 @@ export async function openMarkdownFilesFromBrowserFiles(
 export function embeddedFilesFromBrowserFiles(
   files: FileList | File[],
   kind: EmbeddedFileKind = 'file',
-  skipMarkdown = false,
+  skipTextDocuments = false,
 ): PickedEmbeddedFile[] {
   return Array.from(files)
-    .filter((file) => !skipMarkdown || !isMarkdownTitle(file.name))
+    .filter((file) => !skipTextDocuments || !isTextDocumentTitle(file.name))
     .filter((file) => kind === 'file' || file.type.startsWith('image/') || isImageTitle(file.name))
     .map((file) => ({
       title: file.name,
@@ -243,7 +256,7 @@ export async function openMarkdownFilesAtPaths(paths: string[]): Promise<OpenedM
     return [];
   }
 
-  const markdownPaths = paths.filter(isMarkdownTitle);
+  const markdownPaths = paths.filter(isTextDocumentTitle);
   if (markdownPaths.length === 0) {
     return [];
   }
@@ -262,6 +275,15 @@ export async function openMarkdownFilesAtPaths(paths: string[]): Promise<OpenedM
   }
 
   return result.files;
+}
+
+export async function allowAssetPaths(paths: string[]): Promise<void> {
+  if (!isTauriRuntime() || paths.length === 0) {
+    return;
+  }
+
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('allow_asset_paths', { paths });
 }
 
 export async function getInitialMarkdownOpenFiles(): Promise<OpenedMarkdownFile[]> {

@@ -5,7 +5,13 @@ import {
   useMemo,
   useRef,
 } from 'react';
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  indentWithTab,
+  undo,
+} from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import {
   bracketMatching,
@@ -30,6 +36,7 @@ export type MarkdownEditorHandle = {
   applyAction: (action: EditorActionId) => void;
   focus: () => void;
   insertMarkdown: (markdown: string) => void;
+  undo: () => void;
 };
 
 type MarkdownEditorProps = {
@@ -195,6 +202,15 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       },
       focus() {
         viewRef.current?.focus();
+      },
+      undo() {
+        const view = viewRef.current;
+        if (!view) {
+          return;
+        }
+
+        undo(view);
+        view.focus();
       },
     }));
 
