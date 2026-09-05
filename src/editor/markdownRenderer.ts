@@ -2,6 +2,9 @@ import DOMPurify from 'dompurify';
 import MarkdownIt from 'markdown-it';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { isTauriRuntime } from '../platform/platformCapabilities';
+import {
+  diagramLanguage, MAX_DIAGRAMS, plantumlSources, type DiagramSource,
+} from '../markdown/diagrams/diagramSource';
 
 const markdownRenderer = new MarkdownIt({
   html: true,
@@ -16,7 +19,11 @@ type RenderMarkdownOptions = {
 type MarkdownRenderEnv = {
   documentPath?: string;
   localPathCollector?: (path: string) => void;
+  diagrams?: DiagramSource[];
+  diagramRenderId?: string;
 };
+
+export type MarkdownPreviewDocument = { html: string; diagrams: DiagramSource[] };
 
 function normalizePathSeparators(path: string) {
   return path.replace(/\\/g, '/');
@@ -211,6 +218,7 @@ function prepareRenderedHtml(
   rendered: string,
   documentPath?: string,
   localPathCollector?: (path: string) => void,
+  diagrams: DiagramSource[] = [],
 ) {
   if (typeof document === 'undefined') {
     return rendered;
@@ -218,6 +226,15 @@ function prepareRenderedHtml(
 
   const template = document.createElement('template');
   template.innerHTML = rendered;
+
+  // Only parser-generated slots may host diagram controls. Raw HTML remains
+  // supported, but cannot impersonate a slot using a predictable index.
+  const diagramIds = new Set(diagrams.map((diagram) => diagram.id));
+  for (const slot of template.content.querySelectorAll('[data-markitty-diagram]')) {
+    if (!diagramIds.has(slot.getAttribute('data-markitty-diagram') ?? '')) {
+      slot.removeAttribute('data-markitty-diagram');
+    }
+  }
 
   for (const image of template.content.querySelectorAll<HTMLImageElement>('img[src]')) {
     const src = image.getAttribute('src') ?? '';
@@ -316,6 +333,41 @@ markdownRenderer.renderer.rules.image = (tokens, index, options, env, self) => {
 export function renderMarkdown(content: string, options: RenderMarkdownOptions = {}) {
   const rendered = markdownRenderer.render(content, options);
   const prepared = prepareRenderedHtml(rendered, options.documentPath);
+  return sanitizeMarkdown(prepared);
+}
+
+const defaultFence = markdownRenderer.renderer.rules.fence!;
+markdownRenderer.renderer.rules.fence = (tokens, index, options, env, self) => {
+  const token = tokens[index];
+  const renderEnv = env as MarkdownRenderEnv;
+  const format = diagramLanguage(token.info);
+  if (!format || !renderEnv.diagrams) return defaultFence(tokens, index, options, env, self);
+
+  const sources = format === 'plantuml' ? plantumlSources(token.content) : [token.content];
+  if (renderEnv.diagrams.length + sources.length > MAX_DIAGRAMS) {
+    return '<p class="diagram-limit" role="alert">A preview can render at most 100 diagrams. This block is shown as source.</p>\n'
+      + defaultFence(tokens, index, options, env, self);
+  }
+  return sources.map((source) => {
+    const id = `${renderEnv.diagramRenderId}-${renderEnv.diagrams!.length}`;
+    renderEnv.diagrams!.push({ id, format, source });
+    return `<div data-markitty-diagram="${id}"></div>\n`;
+  }).join('');
+};
+
+export function renderMarkdownPreview(
+  content: string,
+  options: RenderMarkdownOptions = {},
+): MarkdownPreviewDocument {
+  const diagrams: DiagramSource[] = [];
+  const rendered = markdownRenderer.render(content, {
+    ...options, diagrams, diagramRenderId: crypto.randomUUID(),
+  } satisfies MarkdownRenderEnv);
+  const prepared = prepareRenderedHtml(rendered, options.documentPath, undefined, diagrams);
+  return { html: sanitizeMarkdown(prepared), diagrams };
+}
+
+function sanitizeMarkdown(prepared: string) {
   return DOMPurify.sanitize(prepared, {
     ADD_ATTR: ['data-markitty-open-path', 'download', 'loading'],
     ALLOWED_URI_REGEXP:

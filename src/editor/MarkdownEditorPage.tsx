@@ -625,6 +625,7 @@ export function MarkdownEditorPage() {
           <MarkdownPreview
             content={document.content}
             documentPath={document.path}
+            documentTitle={document.title}
             onOpenDocumentPath={handleOpenPreviewDocument}
           />
         ) : null}
