@@ -403,7 +403,7 @@ export function MarkdownEditorPage() {
       isDirty: false,
       updatedAt: new Date().toISOString(),
     }));
-    setSaveStatus('Saved. Purrfect.');
+    setSaveStatus('Saved');
   };
 
   const handleActivateTab = (documentId: string) => {
