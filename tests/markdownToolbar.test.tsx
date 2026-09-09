@@ -6,20 +6,16 @@ function renderToolbar(mode: 'edit' | 'preview' | 'split', onUndo = vi.fn()) {
   render(
     <MarkdownToolbar
       mode={mode}
-      requestedMode={mode}
       canUseSplit
       canOpenFiles
       canEmbedFiles
-      theme="light"
       onModeChange={vi.fn()}
       onAction={vi.fn()}
       onEmbedFile={vi.fn()}
       onEmbedImage={vi.fn()}
-      onNew={vi.fn()}
       onOpen={vi.fn()}
       onSave={vi.fn()}
       onSaveAs={vi.fn()}
-      onToggleTheme={vi.fn()}
       onUndo={onUndo}
     />,
   );

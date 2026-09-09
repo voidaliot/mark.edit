@@ -10,6 +10,8 @@ import {
   type PointerEvent,
 } from 'react';
 import { useTheme } from '../app/themeContext';
+import { WindowTitlebar } from '../platform/WindowTitlebar';
+import { CloseDocumentDialog } from './CloseDocumentDialog';
 import {
   embeddedFilesFromDroppedFiles,
   getInitialMarkdownFilesToOpen,
@@ -25,6 +27,7 @@ import {
 import {
   createNewDocument,
   documentFromFile,
+  markDocumentSaved,
   updateDocumentContent,
   type MarkittyDocument,
 } from '../storage/documentModel';
@@ -44,7 +47,6 @@ import {
   normalizeEditorMode,
   type EditorActionId,
   type EditorMode,
-  type SaveStatus,
 } from './editorTypes';
 import { createEmbeddedMarkdown, isImagePath } from './embeddedMarkdown';
 import {
@@ -116,8 +118,12 @@ export function MarkdownEditorPage() {
   const [requestedMode, setRequestedMode] = useState<EditorMode>('split');
   const [splitEditorPercent, setSplitEditorPercent] = useState(loadSplitEditorPercent);
   const [resizingPointerId, setResizingPointerId] = useState<number | null>(null);
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('Recovered draft');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [draftFailed, setDraftFailed] = useState(false);
+  const [closingDocumentId, setClosingDocumentId] = useState<string | null>(null);
+  const [closingBusy, setClosingBusy] = useState(false);
+  const [closingError, setClosingError] = useState<string | null>(null);
+  const savingIdsRef = useRef(new Set<string>());
   const isWideLayout = useWideLayout();
   const mode = normalizeEditorMode(requestedMode, isWideLayout);
   const capabilities = usePlatformCapabilities(isWideLayout);
@@ -128,15 +134,29 @@ export function MarkdownEditorPage() {
     [activeDocumentId, documents],
   );
   const stats = useMemo(() => getDocumentStats(document.content), [document.content]);
-  const { theme, toggleTheme } = useTheme();
+  const { theme } = useTheme();
+  const documentIds = useMemo(() => documents.map((current) => current.id), [documents]);
+  const closingDocument = documents.find((current) => current.id === closingDocumentId);
 
   useEffect(() => {
     documentsRef.current = documents;
   }, [documents]);
 
   useEffect(() => {
-    saveWorkspaceDraft({ documents, activeDocumentId: document.id });
+    setDraftFailed(!saveWorkspaceDraft({ documents, activeDocumentId: document.id }));
   }, [activeDocumentId, document.id, documents]);
+
+  useEffect(() => {
+    if (!draftFailed) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      if (documentsRef.current.some((current) => current.isDirty)) {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
+  }, [draftFailed]);
 
   useEffect(() => {
     saveSplitEditorPercent(splitEditorPercent);
@@ -212,7 +232,6 @@ export function MarkdownEditorPage() {
 
       setActiveDocumentId(nextActiveDocument.id);
       setRequestedMode(nextMode);
-      setSaveStatus(`Opened ${nextActiveDocument.title}`);
       setErrorMessage(null);
       window.setTimeout(() => editorRef.current?.focus(), 0);
     },
@@ -270,19 +289,16 @@ export function MarkdownEditorPage() {
 
   const handleContentChange = (content: string) => {
     setErrorMessage(null);
-    setSaveStatus('Draft saved');
     updateActiveDocument((current) => updateDocumentContent(current, content));
   };
 
   const handleNew = () => {
     addDocumentTab(createNewDocument());
-    setSaveStatus('Start scratching some Markdown.');
     setErrorMessage(null);
   };
 
   const handleOpenError = useCallback((error: Error) => {
     setErrorMessage(error.message);
-    setSaveStatus('Open failed');
   }, []);
 
   const handleOpen = async () => {
@@ -336,9 +352,9 @@ export function MarkdownEditorPage() {
         return;
       }
 
-      unlisten = await listenForMarkdownFilesToOpen(
+      const cleanup = await listenForMarkdownFilesToOpen(
         (files) => {
-          addDocumentTabs(files.map(documentFromFile), 'split');
+          if (!isDisposed) addDocumentTabs(files.map(documentFromFile), 'split');
         },
         (error) => {
           if (!isDisposed) {
@@ -346,9 +362,13 @@ export function MarkdownEditorPage() {
           }
         },
       );
+      if (isDisposed) cleanup();
+      else unlisten = cleanup;
     };
 
-    void setupOpenListeners();
+    void setupOpenListeners().catch((error) => {
+      if (!isDisposed) handleOpenError(error instanceof Error ? error : new Error('Unable to listen for file opens.'));
+    });
 
     return () => {
       isDisposed = true;
@@ -361,14 +381,18 @@ export function MarkdownEditorPage() {
     let unlisten: () => void = () => undefined;
 
     const setupDropListener = async () => {
-      unlisten = await listenForEmbeddedFilesToDrop((files) => {
+      const cleanup = await listenForEmbeddedFilesToDrop((files) => {
         if (!isDisposed) {
           insertEmbeddedFiles(files, 'auto');
         }
       });
+      if (isDisposed) cleanup();
+      else unlisten = cleanup;
     };
 
-    void setupDropListener();
+    void setupDropListener().catch(() => {
+      if (!isDisposed) setErrorMessage('Unable to listen for dropped files.');
+    });
 
     return () => {
       isDisposed = true;
@@ -389,75 +413,88 @@ export function MarkdownEditorPage() {
     }
 
     event.preventDefault();
-    const openedFiles = await openMarkdownFromDroppedFiles(event.dataTransfer.files);
-    const embeddedFiles = embeddedFilesFromDroppedFiles(event.dataTransfer.files);
-    addDocumentTabs(openedFiles.map(documentFromFile), 'split');
-    insertEmbeddedFiles(embeddedFiles, 'auto');
-  };
-
-  const markSaved = (saved: { path?: string; title?: string }) => {
-    updateActiveDocument((current) => ({
-      ...current,
-      path: saved.path ?? current.path,
-      title: saved.title ?? current.title,
-      isDirty: false,
-      updatedAt: new Date().toISOString(),
-    }));
-    setSaveStatus('Saved');
+    try {
+      const openedFiles = await openMarkdownFromDroppedFiles(event.dataTransfer.files);
+      const embeddedFiles = embeddedFilesFromDroppedFiles(event.dataTransfer.files);
+      addDocumentTabs(openedFiles.map(documentFromFile), 'split');
+      insertEmbeddedFiles(embeddedFiles, 'auto');
+    } catch (error) {
+      handleOpenError(error instanceof Error ? error : new Error('Unable to open dropped files.'));
+    }
   };
 
   const handleActivateTab = (documentId: string) => {
     setActiveDocumentId(documentId);
-    window.setTimeout(() => editorRef.current?.focus(), 0);
+  };
+
+  const closeTabNow = (documentId: string) => {
+    const currentDocuments = documentsRef.current;
+    const closedIndex = currentDocuments.findIndex((current) => current.id === documentId);
+    if (closedIndex < 0) return;
+    const nextDocuments = currentDocuments.filter((current) => current.id !== documentId);
+    if (!nextDocuments.length) {
+      nextDocuments.push(createNewDocument());
+      setRequestedMode('edit');
+    }
+    documentsRef.current = nextDocuments;
+    setDocuments(nextDocuments);
+    if (documentId === activeDocumentId) {
+      setActiveDocumentId(nextDocuments[Math.max(0, closedIndex - 1)].id);
+    }
+    setClosingDocumentId(null);
+    setErrorMessage(null);
+    requestAnimationFrame(() => window.document.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus());
   };
 
   const handleCloseTab = (documentId: string) => {
-    if (documents.length === 1) {
-      const nextDocument = createNewDocument();
-      setDocuments([nextDocument]);
-      setActiveDocumentId(nextDocument.id);
-      setSaveStatus('Start scratching some Markdown.');
-      return;
-    }
+    const target = documentsRef.current.find((current) => current.id === documentId);
+    if (!target) return;
+    if (target.isDirty) {
+      setClosingError(null);
+      setClosingDocumentId(documentId);
+    } else closeTabNow(documentId);
+  };
 
-    const closedIndex = documents.findIndex((currentDocument) => currentDocument.id === documentId);
-    const nextDocuments = documents.filter(
-      (currentDocument) => currentDocument.id !== documentId,
-    );
-    setDocuments(nextDocuments);
-
-    if (documentId === activeDocumentId) {
-      const nextActiveIndex = Math.max(0, closedIndex - 1);
-      setActiveDocumentId(nextDocuments[nextActiveIndex].id);
+  const saveDocument = async (snapshot: MarkittyDocument, saveAs = false) => {
+    if (savingIdsRef.current.has(snapshot.id)) return false;
+    savingIdsRef.current.add(snapshot.id);
+    setErrorMessage(null);
+    try {
+      const saved = snapshot.path && !saveAs
+        ? await saveMarkdownToDevice(snapshot)
+        : await saveMarkdownToNewPath(snapshot);
+      if (!saved) return false;
+      const current = documentsRef.current.find((item) => item.id === snapshot.id);
+      if (!current) return false;
+      const updated = documentsRef.current.map((item) =>
+        item.id === snapshot.id ? markDocumentSaved(item, snapshot, saved) : item,
+      );
+      documentsRef.current = updated;
+      setDocuments(updated);
+      return current.content === snapshot.content;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to save this file.';
+      setErrorMessage(message);
+      setClosingError(message);
+      return false;
+    } finally {
+      savingIdsRef.current.delete(snapshot.id);
     }
   };
 
-  const handleSave = async () => {
-    setErrorMessage(null);
-    try {
-      const saved = document.path
-        ? await saveMarkdownToDevice(document)
-        : await saveMarkdownToNewPath(document);
+  const handleSave = () => saveDocument(document);
+  const handleSaveAs = () => saveDocument(document, true);
 
-      if (saved) {
-        markSaved(saved);
-      }
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to save this file.');
-      setSaveStatus('Save failed');
-    }
-  };
-
-  const handleSaveAs = async () => {
-    setErrorMessage(null);
+  const handleSaveAndClose = async () => {
+    if (!closingDocument || closingBusy) return;
+    setClosingBusy(true);
+    setClosingError(null);
     try {
-      const saved = await saveMarkdownToNewPath(document);
-      if (saved) {
-        markSaved(saved);
+      if (await saveDocument(closingDocument)) {
+        closeTabNow(closingDocument.id);
       }
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to save this file.');
-      setSaveStatus('Save failed');
+    } finally {
+      setClosingBusy(false);
     }
   };
 
@@ -541,10 +578,17 @@ export function MarkdownEditorPage() {
   };
 
   useEditorShortcuts({
+    enabled: !closingDocument,
     onAction: runEditorAction,
     onNew: handleNew,
     onOpen: capabilities.canOpenFiles ? handleOpen : undefined,
     onSave: handleSave,
+    onSaveAs: handleSaveAs,
+    onClose: () => handleCloseTab(document.id),
+    onNextTab: (direction) => {
+      const index = documents.findIndex((current) => current.id === document.id);
+      setActiveDocumentId(documents[(index + direction + documents.length) % documents.length].id);
+    },
   });
 
   const showEditor = mode === 'edit' || mode === 'split';
@@ -557,48 +601,57 @@ export function MarkdownEditorPage() {
 
   return (
     <main className="markitty-shell" onDragOver={handleDragOver} onDrop={handleDrop}>
-      <header className="command-bar">
+      <WindowTitlebar title={`${document.isDirty ? '• ' : ''}${document.title}`} onError={setErrorMessage}>
+        <DocumentTabs
+          documents={documents}
+          activeDocumentId={document.id}
+          onActivate={handleActivateTab}
+          onClose={handleCloseTab}
+          onNew={handleNew}
+        />
+      </WindowTitlebar>
+      <div className="command-bar">
         <MarkdownToolbar
           mode={mode}
-          requestedMode={requestedMode}
           canUseSplit={capabilities.canUseSplitView}
           canOpenFiles={capabilities.canOpenFiles}
           canEmbedFiles={capabilities.canOpenFiles}
-          theme={theme}
           onModeChange={setRequestedMode}
           onAction={runEditorAction}
           onEmbedFile={handleEmbedFile}
           onEmbedImage={handleEmbedImage}
-          onNew={handleNew}
           onOpen={handleOpen}
           onSave={handleSave}
           onSaveAs={handleSaveAs}
-          onToggleTheme={toggleTheme}
           onUndo={handleUndo}
         />
-      </header>
+      </div>
 
-      <DocumentTabs
-        documents={documents}
-        activeDocumentId={document.id}
-        onActivate={handleActivateTab}
-        onClose={handleCloseTab}
-      />
+      {errorMessage || draftFailed ? (
+        <div className="error-banner" role="alert">
+          <span>{errorMessage ?? 'Draft recovery is unavailable. Save your work to a file before closing the app.'}</span>
+          {errorMessage ? <button type="button" onClick={() => setErrorMessage(null)}>Dismiss</button> : null}
+        </div>
+      ) : null}
 
       <section
         className={`workspace ${resizingPointerId === null ? '' : 'is-resizing'}`.trim()}
         data-mode={mode}
+        id="document-panel"
+        role="tabpanel"
+        aria-labelledby={`tab-${document.id}`}
         ref={workspaceRef}
         style={splitWorkspaceStyle}
       >
-        {showEditor ? (
-          <MarkdownEditor
-            ref={editorRef}
-            value={document.content}
-            onChange={handleContentChange}
-            theme={theme}
-          />
-        ) : null}
+        <MarkdownEditor
+          ref={editorRef}
+          documentId={document.id}
+          documentIds={documentIds}
+          hidden={!showEditor}
+          value={document.content}
+          onChange={handleContentChange}
+          theme={theme}
+        />
         {mode === 'split' ? (
           <div
             className="split-resize-handle"
@@ -632,13 +685,23 @@ export function MarkdownEditorPage() {
       </section>
 
       <footer className="status-bar">
+        <span className="document-location" title={document.path ?? document.title}>{document.path ?? document.title}</span>
         <span>{stats.words} words</span>
         <span>{stats.characters} characters</span>
-        <span className={document.isDirty ? 'dirty-dot' : 'clean-dot'}>
-          {document.isDirty ? 'Unsaved changes' : saveStatus}
+        <span role="status" className={document.isDirty ? 'dirty-dot' : 'clean-dot'}>
+          {document.isDirty ? 'Unsaved changes' : document.path ? 'Saved' : document.content ? 'Draft saved' : 'Ready'}
         </span>
-        {errorMessage ? <span className="status-error">{errorMessage}</span> : null}
       </footer>
+      {closingDocument ? (
+        <CloseDocumentDialog
+          title={closingDocument.title}
+          busy={closingBusy}
+          error={closingError}
+          onCancel={() => setClosingDocumentId(null)}
+          onDiscard={() => closeTabNow(closingDocument.id)}
+          onSave={handleSaveAndClose}
+        />
+      ) : null}
     </main>
   );
 }

@@ -3,7 +3,9 @@ import {
   createNewDocument,
   deserializeDocument,
   documentFromFile,
+  markDocumentSaved,
   serializeDocument,
+  updateDocumentContent,
 } from '../src/storage/documentModel';
 
 describe('document model', () => {
@@ -31,5 +33,15 @@ describe('document model', () => {
     const document = createNewDocument('hello');
     expect(deserializeDocument(serializeDocument(document))).toEqual(document);
     expect(deserializeDocument('not-json')).toBeNull();
+  });
+
+  it('keeps edits made during an asynchronous save marked as unsaved', () => {
+    const snapshot = createNewDocument('Saved text');
+    const current = updateDocumentContent(snapshot, 'Saved text with a newer edit');
+    const result = markDocumentSaved(current, snapshot, { path: 'C:/notes/saved.md', title: 'saved.md' });
+    expect(result.content).toBe('Saved text with a newer edit');
+    expect(result.path).toBe('C:/notes/saved.md');
+    expect(result.isDirty).toBe(true);
+    expect(markDocumentSaved(current, current, {}).isDirty).toBe(false);
   });
 });

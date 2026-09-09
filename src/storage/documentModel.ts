@@ -75,6 +75,22 @@ export function serializeDocument(document: MarkittyDocument) {
   return JSON.stringify(document);
 }
 
+// A save completes asynchronously. Edits made while it was in flight still
+// need saving, and the result always belongs to the document that was saved.
+export function markDocumentSaved(
+  current: MarkittyDocument,
+  snapshot: MarkittyDocument,
+  saved: { path?: string; title?: string },
+): MarkittyDocument {
+  return {
+    ...current,
+    path: saved.path ?? current.path,
+    title: saved.title ?? current.title,
+    isDirty: current.content !== snapshot.content,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export function deserializeDocument(value: string): MarkittyDocument | null {
   try {
     const parsed = JSON.parse(value) as Partial<MarkittyDocument>;

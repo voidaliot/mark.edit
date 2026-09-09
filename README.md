@@ -61,6 +61,19 @@ Build the standard release outputs:
 npm run build:all
 ```
 
+## Releases
+
+Run the **Release** workflow in GitHub Actions (or `gh workflow run release.yml --ref main`).
+It checks the app, builds the Windows x64 release executable, then creates a
+`vMAJOR.MINOR.PATCH` tag at the selected commit and publishes a GitHub release
+with the executable and `SHA256SUMS.txt`. The same files are saved as a workflow
+artifact. The executable requires Microsoft Edge WebView2 Runtime.
+
+Before the next release, update the matching versions in `package.json`,
+`package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and
+`src-tauri/tauri.conf.json`, then commit and push. Existing tags are never replaced.
+Only Windows x64 is built; release binaries are currently unsigned.
+
 ## Test
 
 ```bash
@@ -70,19 +83,36 @@ npm test
 ## MVP Features
 
 - Create a new Markdown document.
-- Use browser-style tabs for multiple open Markdown documents.
+- Use top document tabs in a compact desktop titlebar, with keyboard navigation and middle-click to close.
 - Edit Markdown with CodeMirror 6.
 - Render Markdown preview with sanitized output.
 - Render Mermaid and PlantUML fenced diagrams locally, with zoom, source view, and SVG export.
 - Toggle edit, preview, and split modes on wide screens.
 - Save drafts locally and recover them after restart.
+- Keep separate undo histories and cursor positions for each tab, including across theme and preview changes.
+- Save, discard, or cancel before closing a tab with unsaved changes.
 - Open and save `.md` or `.markdown` files where platform support allows it.
 - Use formatting toolbar actions for headings, bold, italic, inline code, code blocks, links, lists, and quotes.
 - Insert Markdown image embeds and file attachments from local files.
-- Use desktop keyboard shortcuts for bold, italic, save, new, and open.
-- Switch between light and dark themes.
+- Use desktop keyboard shortcuts for bold, italic, save, save as, new, open, and tab navigation.
+- Follow the system theme automatically, or choose Light or Dark from the titlebar.
 - See word count, character count, and save status.
 - Use the shared Markitty cat icon across the app UI, favicon, and generated Tauri icons.
+
+## Keyboard shortcuts
+
+Use Ctrl on Windows/Linux or Command on macOS for document actions.
+
+| Action | Shortcut |
+| --- | --- |
+| New tab | Ctrl+T or Ctrl+N |
+| Open files | Ctrl+O |
+| Save / Save as | Ctrl+S / Ctrl+Shift+S |
+| Close tab | Ctrl+W |
+| Next / previous tab | Ctrl+Tab / Ctrl+Shift+Tab |
+| Bold / italic | Ctrl+B / Ctrl+I |
+
+When a tab has focus, Left/Right, Home/End, and Delete navigate or close tabs.
 
 ## Diagrams
 

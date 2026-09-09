@@ -1,7 +1,7 @@
 :root {
   color-scheme: light;
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 16px;
   line-height: 1.5;
   color: var(--text-primary);
@@ -24,7 +24,7 @@ body,
   width: 100%;
   min-width: 320px;
   height: 100%;
-  min-height: 100svh;
+  min-height: 0;
   margin: 0;
 }
 
@@ -34,6 +34,16 @@ body {
 
 button {
   font: inherit;
+}
+
+[hidden] { display: none !important; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+* { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
 
 a {

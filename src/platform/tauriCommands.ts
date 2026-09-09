@@ -94,6 +94,7 @@ function openWithBrowserPicker(): Promise<OpenedMarkdownFile[]> {
     input.type = 'file';
     input.multiple = true;
     input.accept = '.md,.markdown,.txt,.text,text/markdown,text/plain';
+    input.addEventListener('cancel', () => resolve([]), { once: true });
 
     input.addEventListener('change', async () => {
       const files = input.files;
@@ -118,6 +119,7 @@ function pickBrowserFilesForEmbedding(kind: EmbeddedFileKind): Promise<PickedEmb
     const input = document.createElement('input');
     input.type = 'file';
     input.multiple = true;
+    input.addEventListener('cancel', () => resolve([]), { once: true });
     if (kind === 'image') {
       input.accept = imageExtensions.map((extension) => `.${extension}`).join(',');
     }
@@ -192,7 +194,7 @@ export async function saveMarkdownFileAs(
 ): Promise<SavedMarkdownFile | null> {
   if (!isTauriRuntime()) {
     downloadMarkdown(content, title);
-    return { title: ensureMarkdownExtension(title) };
+    return { title: ensureTextDocumentExtension(title) };
   }
 
   const { save } = await import('@tauri-apps/plugin-dialog');

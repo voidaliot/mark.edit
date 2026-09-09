@@ -8,7 +8,7 @@ function getStorage(): Storage | null {
     return null;
   }
 
-  return window.localStorage;
+  try { return window.localStorage; } catch { return null; }
 }
 
 export function clampSplitEditorPercent(percent: number) {
@@ -24,19 +24,20 @@ export function clampSplitEditorPercent(percent: number) {
 }
 
 export function loadSplitEditorPercent() {
-  const storedValue = getStorage()?.getItem(SPLIT_EDITOR_PERCENT_STORAGE_KEY);
-  if (!storedValue) {
+  try {
+    const storedValue = getStorage()?.getItem(SPLIT_EDITOR_PERCENT_STORAGE_KEY);
+    return storedValue ? clampSplitEditorPercent(Number(storedValue)) : DEFAULT_SPLIT_EDITOR_PERCENT;
+  } catch {
     return DEFAULT_SPLIT_EDITOR_PERCENT;
   }
-
-  return clampSplitEditorPercent(Number(storedValue));
 }
 
 export function saveSplitEditorPercent(percent: number) {
-  getStorage()?.setItem(
-    SPLIT_EDITOR_PERCENT_STORAGE_KEY,
-    String(clampSplitEditorPercent(percent)),
-  );
+  try {
+    getStorage()?.setItem(SPLIT_EDITOR_PERCENT_STORAGE_KEY, String(clampSplitEditorPercent(percent)));
+  } catch {
+    // Resizing remains available when preferences cannot be persisted.
+  }
 }
 
 export const defaultSplitEditorPercent = DEFAULT_SPLIT_EDITOR_PERCENT;

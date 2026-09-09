@@ -33,7 +33,7 @@ test('both local engines render production assets, labels and icons without netw
   await openDocument(page, '# Diagrams\n\nRendered entirely on this device.\n\n```mermaid\nflowchart LR\nA["Line one<br>Line two #dagger; #nbsp;"] --> B["<b>Done</b>"]\n```\n\n> ~~~puml\n> Alice -> Bob: Hello\n> Bob --> Alice: Hi!\n> ~~~\n\n```plantuml\n@startuml\nclass Editor\nclass Preview\nEditor --> Preview\n@enduml\n@startuml\nrectangle "<&heart> Local icons"\n@enduml\n```\n\nText after.');
   await expectDiagrams(page, 4);
   await expect(page.getByRole('heading', { name: 'Diagrams', exact: true })).toBeVisible();
-  await expect(page.getByText('Text after.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('article', { name: 'Rendered Markdown preview' }).getByText('Text after.', { exact: true })).toBeVisible();
   await expect(page.locator('iframe')).toHaveCount(0);
   expect(external).toEqual([]);
   expect(errors).toEqual([]);
@@ -63,7 +63,7 @@ test('both local engines render production assets, labels and icons without netw
   expect(exported.breaks).toBeGreaterThan(0);
   await first.getByText('Source', { exact: true }).click();
   await page.screenshot({ path: testInfo.outputPath('diagrams-light.png') });
-  await page.getByRole('button', { name: /dark theme/i }).click();
+  await page.getByRole('combobox', { name: 'Color theme' }).selectOption('dark');
   await page.screenshot({ path: testInfo.outputPath('diagrams-dark.png') });
 });
 
@@ -80,7 +80,7 @@ test('syntax errors and offline limitations stay inline while later diagrams ren
   await expect(page.locator('.diagram').nth(3)).toContainText('not supported');
   await page.locator('.diagram').last().scrollIntoViewIfNeeded();
   await expect(page.locator('.diagram').last().locator('img')).toBeVisible();
-  await expect(page.getByText('Still readable.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('article', { name: 'Rendered Markdown preview' }).getByText('Still readable.', { exact: true })).toBeVisible();
   await expect(page.locator('iframe')).toHaveCount(0);
 });
 

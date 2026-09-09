@@ -6,7 +6,7 @@ type IconButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode;
 };
 
-export function IconButton({ label, pressed, children, ...props }: IconButtonProps) {
+export function IconButton({ label, pressed, children, title = label, ...props }: IconButtonProps) {
   return (
     <button
       {...props}
@@ -14,7 +14,7 @@ export function IconButton({ label, pressed, children, ...props }: IconButtonPro
       className={`icon-button ${props.className ?? ''}`.trim()}
       aria-label={label}
       aria-pressed={pressed}
-      title={label}
+      title={title}
     >
       {children}
     </button>

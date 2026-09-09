@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent 
 import { createPortal } from 'react-dom';
 import { allowAssetPaths } from '../platform/tauriCommands';
 import { DiagramPreview } from '../markdown/diagrams/DiagramPreview';
+import { MarkittyIcon } from '../shared/components/MarkittyIcon';
 import { collectMarkdownResourcePaths, renderMarkdownPreview, type MarkdownPreviewDocument } from './markdownRenderer';
 
 type MarkdownPreviewProps = {
@@ -68,9 +69,10 @@ export function MarkdownPreview({
 
   if (!content.trim()) {
     return (
-      <article className="preview-pane preview-empty">
-        <p>No document open. The cat is waiting.</p>
-        <p>Start scratching some Markdown.</p>
+      <article className="preview-pane preview-empty" aria-label="Rendered Markdown preview">
+        <span className="empty-mark"><MarkittyIcon size={48} /></span>
+        <p className="empty-title">A little space for your words.</p>
+        <p>Start writing to see your Markdown here.</p>
       </article>
     );
   }

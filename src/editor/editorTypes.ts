@@ -15,7 +15,7 @@ export type SaveStatus =
   | 'Recovered draft'
   | 'Draft saved'
   | 'Start scratching some Markdown.'
-  | 'Saved. Purrfect.'
+  | 'Saved'
   | 'Save failed'
   | 'Open failed'
   | `Opened ${string}`;

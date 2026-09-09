@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Build and publish Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CARGO_TERM_COLOR: always
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v4
+
+      - name: Validate release version
+        id: version
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+            throw 'Release version must use MAJOR.MINOR.PATCH'
+          }
+          $tauriVersion = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $cargo = cargo metadata --manifest-path src-tauri/Cargo.toml --no-deps --format-version 1 --locked | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to read Cargo metadata' }
+          $cargoVersion = ($cargo.packages | Where-Object name -eq 'markitty').version
+          $lock = Get-Content package-lock.json -Raw | ConvertFrom-Json -AsHashtable
+          if ($tauriVersion -ne $version -or $cargoVersion -ne $version -or $lock.version -ne $version -or $lock.packages.''.version -ne $version) {
+            throw 'Versions in package.json, package-lock.json, Cargo.toml, and tauri.conf.json must match'
+          }
+          $tag = "v$version"
+          $tags = git ls-remote --tags origin "refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to check existing release tags' }
+          if ($tags) { throw "Tag $tag already exists; bump the app version before releasing" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Cache Rust build data
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend tests
+        run: npm test
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build Windows release executable
+        run: npm run build:desktop -- --target x86_64-pc-windows-msvc -- --locked
+
+      - name: Verify production app in Microsoft Edge
+        run: npm run test:browser
+
+      - name: Prepare release assets
+        run: |
+          $source = Get-Item src-tauri/target/x86_64-pc-windows-msvc/release/markitty.exe
+          if ($source.VersionInfo.ProductVersion -ne $env:RELEASE_VERSION) {
+            throw "Executable version does not match $env:RELEASE_VERSION"
+          }
+          New-Item -ItemType Directory -Path release-assets | Out-Null
+          $asset = "release-assets/Markitty_${env:RELEASE_VERSION}_windows_x64.exe"
+          Copy-Item -LiteralPath $source.FullName -Destination $asset
+          $hash = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path $asset -Leaf)" | Set-Content release-assets/SHA256SUMS.txt -Encoding ascii
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Markitty-${{ steps.version.outputs.version }}-windows-x64
+          path: release-assets/*
+          if-no-files-found: error
+
+      - name: Create tag and publish GitHub release
+        run: |
+          $assets = (Get-ChildItem release-assets -File).FullName
+          gh release create "v$env:RELEASE_VERSION" @assets --target $env:GITHUB_SHA --title "Markitty $env:RELEASE_VERSION" --generate-notes --notes 'Windows x64 executable. Requires Microsoft Edge WebView2 Runtime. This build is unsigned.'
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to create the tag and release' }
