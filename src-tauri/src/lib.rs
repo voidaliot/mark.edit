@@ -118,6 +118,7 @@ fn emit_open_paths(app: &tauri::AppHandle, paths: Vec<String>) {
     return;
   }
 
+  #[cfg(not(mobile))]
   if let Some(window) = app.get_webview_window("main") {
     let _ = window.unminimize();
     let _ = window.show();
@@ -139,6 +140,7 @@ pub fn run() {
   let app = builder
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_fs::init())
+    .plugin(tauri_plugin_opener::init())
     .invoke_handler(tauri::generate_handler![
       initial_open_paths,
       open_markdown_paths,

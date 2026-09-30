@@ -7,6 +7,29 @@ import {
 } from '../src/editor/markdownRenderer';
 
 describe('renderMarkdown', () => {
+  it('keeps web images and video sources and permits only sandboxed video-player frames', () => {
+    const html = renderMarkdown(`![Photo](https://example.com/photo.png)
+
+<video controls src="https://example.com/movie.mp4"><source src="https://example.com/movie.webm"></video>
+
+<iframe src="https://www.youtube.com/embed/abc123" srcdoc="evil" onload="evil()"></iframe>
+<iframe src="https://player.vimeo.com/video/12345"></iframe>
+<iframe src="https://example.com/page"></iframe>
+<iframe src="https://www.youtube.com.evil.test/embed/abc123"></iframe>`);
+    const root = document.createElement('div');
+    root.innerHTML = html;
+    expect(root.querySelector('img')?.getAttribute('src')).toBe('https://example.com/photo.png');
+    expect(root.querySelector('video')?.getAttribute('src')).toBe('https://example.com/movie.mp4');
+    expect(root.querySelector('source')?.getAttribute('src')).toBe('https://example.com/movie.webm');
+    const frames = root.querySelectorAll('iframe');
+    expect(frames).toHaveLength(2);
+    for (const frame of frames) {
+      expect(frame.getAttribute('sandbox')).toBe('allow-scripts allow-same-origin allow-presentation');
+      expect(frame.hasAttribute('srcdoc')).toBe(false);
+      expect(frame.hasAttribute('onload')).toBe(false);
+    }
+  });
+
   afterEach(() => {
     clearMocks();
     vi.unstubAllGlobals();

@@ -249,6 +249,31 @@ function prepareRenderedHtml(
     }
   }
 
+  for (const media of template.content.querySelectorAll('video[src], audio[src], source[src], video[poster]')) {
+    for (const attribute of ['src', 'poster']) {
+      const url = media.getAttribute(attribute);
+      if (!url) continue;
+      collectLocalResourcePath(url, documentPath, localPathCollector);
+      const assetUrl = resolveTauriAssetUrl(url, documentPath);
+      if (assetUrl) media.setAttribute(attribute, assetUrl);
+    }
+  }
+
+  for (const frame of template.content.querySelectorAll('iframe')) {
+    const src = frame.getAttribute('src') ?? '';
+    if (!isVideoEmbedUrl(src)) {
+      frame.remove();
+      continue;
+    }
+    // Video players cannot replace the editor or open uncontrolled popups.
+    frame.removeAttribute('srcdoc');
+    frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-presentation');
+    frame.setAttribute('allow', 'fullscreen; picture-in-picture; encrypted-media');
+    frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+    frame.setAttribute('loading', 'lazy');
+    if (!frame.hasAttribute('title')) frame.setAttribute('title', 'Embedded video');
+  }
+
   for (const link of template.content.querySelectorAll<HTMLAnchorElement>('a[href]')) {
     const href = link.getAttribute('href') ?? '';
     if (/^https?:\/\//i.test(href)) {
@@ -369,9 +394,19 @@ export function renderMarkdownPreview(
 
 function sanitizeMarkdown(prepared: string) {
   return DOMPurify.sanitize(prepared, {
-    ADD_ATTR: ['data-markitty-open-path', 'download', 'loading'],
+    ADD_TAGS: ['iframe'],
+    ADD_ATTR: ['data-markitty-open-path', 'download', 'loading', 'sandbox', 'allow', 'allowfullscreen', 'referrerpolicy'],
     ALLOWED_URI_REGEXP:
       /^(?:(?:https?|mailto|tel|data|blob|asset):|[a-z]:[\\/]|[/.#?]|[^a-z]|[a-z0-9._~%+-]+(?:[/?#]|$))/i,
     USE_PROFILES: { html: true },
   });
+}
+
+function isVideoEmbedUrl(value: string) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.port || url.username || url.password) return false;
+    return (['www.youtube.com', 'www.youtube-nocookie.com'].includes(url.hostname) && /^\/embed\/[\w-]+\/?$/.test(url.pathname))
+      || (url.hostname === 'player.vimeo.com' && /^\/video\/\d+\/?$/.test(url.pathname));
+  } catch { return false; }
 }

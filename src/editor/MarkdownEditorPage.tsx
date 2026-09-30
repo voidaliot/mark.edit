@@ -42,6 +42,7 @@ import { useEditorShortcuts } from './editorShortcuts';
 import { MarkdownEditor, type MarkdownEditorHandle } from './MarkdownEditor';
 import { MarkdownPreview } from './MarkdownPreview';
 import { MarkdownToolbar } from './MarkdownToolbar';
+import { openWebUrl } from '../platform/webLinks';
 import { DocumentTabs } from './DocumentTabs';
 import {
   normalizeEditorMode,
@@ -680,6 +681,9 @@ export function MarkdownEditorPage() {
             documentPath={document.path}
             documentTitle={document.title}
             onOpenDocumentPath={handleOpenPreviewDocument}
+            onOpenWebLink={(url) => {
+              void openWebUrl(url).catch((error) => setErrorMessage(error instanceof Error ? error.message : 'Unable to open this link.'));
+            }}
           />
         ) : null}
       </section>

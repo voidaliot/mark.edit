@@ -38,3 +38,8 @@ src-tauri/gen/android/app/src/main/jniLibs
 *.njsproj
 *.sln
 *.sw?
+
+.npm-cache
+
+.release-signing
+release-assets

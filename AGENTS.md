@@ -14,4 +14,6 @@ Avoid heavy dependencies and large state-management libraries. Do not add sync, 
 
 When asked to build all app versions, build release outputs only: the Windows desktop release executable plus one Android arm64/aarch64 release APK for current devices. Do not build Windows installer bundles (MSI/NSIS), debug artifacts, all Android ABIs, or AABs unless explicitly requested.
 
+The local Android release signing key is `.release-signing/markitty.jks` (alias `markitty`), with its password in `.release-signing/password.txt`. Both are ignored by Git. Reuse this key when signing release APKs so installed apps can be updated; never upload the key or password as release assets.
+
 Verify changes with focused tests. Update this file only for durable project knowledge that future coding agents should know.

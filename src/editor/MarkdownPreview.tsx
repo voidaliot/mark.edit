@@ -9,6 +9,7 @@ type MarkdownPreviewProps = {
   content: string;
   documentPath?: string;
   documentTitle?: string;
+  onOpenWebLink?: (url: string) => void;
   onOpenDocumentPath?: (path: string) => void;
 };
 
@@ -17,6 +18,7 @@ export function MarkdownPreview({
   documentPath,
   documentTitle = 'diagram',
   onOpenDocumentPath,
+  onOpenWebLink,
 }: MarkdownPreviewProps) {
   const resourcePaths = useMemo(
     () => collectMarkdownResourcePaths(content, { documentPath }),
@@ -48,18 +50,21 @@ export function MarkdownPreview({
   }, [resourcePathKey, resourcePaths]);
 
   const handlePreviewClick = (event: MouseEvent<HTMLElement>) => {
-    if (!onOpenDocumentPath) {
-      return;
-    }
-
     const target = event.target;
     if (!(target instanceof Element)) {
       return;
     }
 
+    const webLink = target.closest<HTMLAnchorElement>('a[href]');
+    const href = webLink?.getAttribute('href');
+    if (href && /^https?:\/\//i.test(href) && onOpenWebLink) {
+      event.preventDefault();
+      onOpenWebLink(href);
+      return;
+    }
     const link = target.closest<HTMLAnchorElement>('a[data-markitty-open-path]');
     const path = link?.dataset.markittyOpenPath;
-    if (!path) {
+    if (!path || !onOpenDocumentPath) {
       return;
     }
 
@@ -83,6 +88,7 @@ export function MarkdownPreview({
       className="preview-pane markdown-preview"
       aria-label="Rendered Markdown preview"
       onClick={handlePreviewClick}
+      onAuxClick={(event) => { if (event.button === 1) handlePreviewClick(event); }}
     >
       <MarkdownContent key={preview.html} preview={preview} title={documentTitle} />
     </article>

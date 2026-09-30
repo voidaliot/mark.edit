@@ -351,3 +351,5 @@
   .tab-dirty, .dirty-dot::before { background: Highlight; }
   .caption-button:hover { color: HighlightText; background: Highlight; }
 }
+.markdown-preview video, .markdown-preview audio { max-width: 100%; }
+.markdown-preview iframe { display: block; width: 100%; max-width: 100%; aspect-ratio: 16 / 9; height: auto; border: 0; }

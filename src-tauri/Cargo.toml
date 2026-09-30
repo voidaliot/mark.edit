@@ -1,6 +1,6 @@
 [package]
 name = "markitty"
-version = "0.1.0"
+version = "0.1.1"
 description = "Markdown editor with claws."
 authors = ["Markitty contributors"]
 license = "MIT"
@@ -26,3 +26,4 @@ tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-opener = "2"
